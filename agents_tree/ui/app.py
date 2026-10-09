@@ -8,6 +8,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Input, Static
 
+from .. import composition
 from ..model import MAIN
 from ..sender import ClaudeSender, find_transcript
 from ..sources.live import HookTailer, TranscriptTailer, list_sessions, scan_session
@@ -68,6 +69,10 @@ class AgentsTreeApp(App):
         self.can_send = can_send and not self.replay_mode
         self.sender: ClaudeSender | None = None
         self._new_session_id: str | None = None   # a session we started ourselves, transcript pending
+        self.composition: composition.Composition | None = None
+        self._comp_for: Path | None = None        # session the composition was computed for
+        self._comp_at = 0.0
+        self._comp_busy = False
 
     def compose(self) -> ComposeResult:
         yield Static(render.legend(), id="header")
@@ -75,6 +80,7 @@ class AgentsTreeApp(App):
             with VerticalScroll(id="left"):
                 yield Static(id="agents")
                 yield Static(id="cost")
+                yield Static(id="context")
                 yield Static(id="advisor")
                 yield Static(id="jev")
             with Vertical(id="center"):
@@ -104,6 +110,7 @@ class AgentsTreeApp(App):
             return
         self._drop_sender()
         self.session = path
+        self.composition, self._comp_for, self._comp_at = None, None, 0.0
         self.store = Store()
         self.filter = None
         self.query_one(ChatView).reset()
@@ -207,7 +214,42 @@ class AgentsTreeApp(App):
             self.store.apply(ev)
         self.refresh_views()
 
+    def _maybe_refresh_composition(self) -> None:
+        """Recompute 'where tokens go' in a thread: at most every 15 s while live, once for a replay."""
+        if self.session is None or self._comp_busy or not self.session.exists():
+            return
+        due = self._comp_for != self.session or (not self.replay_mode and time.time() - self._comp_at > 15)
+        if not due:
+            return
+        self._comp_busy, path = True, self.session
+
+        def work():
+            try:
+                return path, composition.analyze(path)
+            except OSError:
+                return path, None
+
+        worker = self.run_worker(work, thread=True, exclusive=False)
+        self._comp_worker = worker
+        self.set_timer(0.05, self._poll_comp)
+
+    def _poll_comp(self) -> None:
+        w = getattr(self, "_comp_worker", None)
+        if w is None:
+            return
+        if w.is_finished:
+            self._comp_worker = None
+            result = w.result if w.result is not None else None
+            self._comp_busy = False
+            if result:
+                path_, comp = result
+                if path_ == self.session and comp is not None:
+                    self.composition, self._comp_for, self._comp_at = comp, path_, time.time()
+        else:
+            self.set_timer(0.2, self._poll_comp)
+
     def refresh_views(self) -> None:
+        self._maybe_refresh_composition()
         s = self.store
         now = None if self.replay_mode else time.time()   # replays use event time
         self.frame += 1
@@ -218,8 +260,12 @@ class AgentsTreeApp(App):
         self.query_one("#agents", Static).update(rail_view(s, now, self.frame, self.show_all))
         adv, jev, cost = (self.query_one(f"#{n}", Static) for n in ("advisor", "jev", "cost"))
         adv.display, jev.display, cost.display = s.advisor.calls > 0, s.jev.forks > 0, s.summary().turns > 0
+        ctx = self.query_one("#context", Static)
+        ctx.display = cost.display and self.session is not None
         if cost.display:
             cost.update(render.cost_view(s))
+        if ctx.display:
+            ctx.update(render.context_view(self.composition))
         if adv.display:
             adv.update(render.advisor_view(s))
         if jev.display:
