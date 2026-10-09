@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -520,5 +519,3 @@ func TestSnapshotRendersAFixtureSessionWithKeys(t *testing.T) {
 		t.Error("a missing session is an error")
 	}
 }
-
-var _ = time.Second

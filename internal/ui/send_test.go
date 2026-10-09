@@ -63,7 +63,7 @@ func argvOf(t *testing.T, root string, n int) []string {
 }
 
 func TestTypingAMessageSendsItAndTheReplyAppearsInTheChat(t *testing.T) {
-	root := fakeEnv(t, "0.4")
+	root := fakeEnv(t, "0.5")
 	m := sendApp(t, root, "live-1", "all")
 	if !strings.Contains(m.chatText(), "first prompt") {
 		t.Fatalf("existing transcript is shown:\n%s", m.chatText())
@@ -274,7 +274,7 @@ func TestSendingWithNoSessionStartsANewOneAndAdoptsItsTranscript(t *testing.T) {
 		t.Errorf("the user's message is in the adopted transcript:\n%s", m.chatText())
 	}
 	// the process that was started for this session must keep running and answer
-	end := time.Now().Add(3 * time.Second)
+	end := time.Now().Add(1500 * time.Millisecond)
 	for time.Now().Before(end) && !strings.Contains(m.chatText(), "echo: brand new") {
 		m.tick(1)
 		time.Sleep(15 * time.Millisecond)

@@ -290,10 +290,12 @@ func (m *Model) adoptNewSession() {
 		return
 	}
 	if p := sessions.FindTranscript(m.newSessionID, m.opt.ProjectsDir); p != "" {
-		id, snd := m.newSessionID, m.snd
-		if err := m.load(p); err == nil {
-			m.snd, m.newSessionID = snd, "" // keep talking to the same process
-			_ = id
+		snd := m.snd
+		m.snd = nil // load() stops the sender: keep talking to the same process instead
+		err := m.load(p)
+		m.snd = snd
+		if err == nil {
+			m.newSessionID = ""
 		}
 	}
 }
@@ -383,9 +385,20 @@ func (m *Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.rep.Speed = max(m.rep.Speed/2, 0.25)
 		}
 	case "end":
-		m.follow = true
-		m.chat.GotoBottom()
-	case "up", "down", "pgup", "pgdown", "home":
+		if m.view == "chat" {
+			m.follow = true
+			m.chat.GotoBottom()
+		} else {
+			m.treeVP.GotoBottom()
+		}
+	case "home":
+		if m.view == "chat" {
+			m.follow = false
+			m.chat.GotoTop()
+		} else {
+			m.treeVP.GotoTop()
+		}
+	case "up", "down", "pgup", "pgdown":
 		var cmd tea.Cmd
 		if m.view == "chat" {
 			m.chat, cmd = m.chat.Update(k)

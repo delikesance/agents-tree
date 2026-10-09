@@ -140,10 +140,10 @@ func costPanel(st *store.Store, width int) string {
 			hs = bold(colGreen)
 		}
 		line := fg(colDim).Render("cache hit ") + hs.Render(fmt.Sprintf("%.1f%%", hr*100))
-		if c.NoCache > 0 {
-			line += fg(colGreen).Render(fmt.Sprintf("  saved %s", usd(c.Saved()))) + fg(colFaint).Render(fmt.Sprintf(" (no cache %s)", usd(c.NoCache)))
-		}
 		l = append(l, line)
+		if c.Saved() >= 0.005 { // one short line each, so the narrow rail never wraps
+			l = append(l, fg(colGreen).Render("saved "+usd(c.Saved()))+fg(colFaint).Render(" · without cache "+usd(c.NoCache)))
+		}
 	}
 	if sm.Unpriced > 0 {
 		l = append(l, fg(colOrange).Render(fmt.Sprintf("%d turns on an unpriced model are excluded", sm.Unpriced)))
