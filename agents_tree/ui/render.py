@@ -324,6 +324,29 @@ def cost_view(store: Store) -> Panel:
     return Panel(t, title="cost (estimate)", border_style="grey50", padding=(0, 1), expand=True)
 
 
+def context_view(comp) -> Panel:
+    """Where the input tokens come from (estimate), with what compressing tool outputs would save."""
+    t = Text()
+    if not comp or not comp.turns:
+        t.append("computing…", style="grey50")
+        return Panel(t, title="where tokens go", border_style="grey50", padding=(0, 1), expand=True)
+    colors = {"context before the first message": "grey62", "code and commands written (tool calls)": "dark_orange",
+              "tool outputs": "spring_green3", "your messages": "#7cb7ff", "assistant replies": "medium_purple1"}
+    for label, volume in comp.categories():
+        share = comp.share(volume)
+        t.append(f"{share:>5.1%} ", style="bold")
+        t.append_text(bar(min(share / 0.5, 1.0), 8))
+        t.append(f" ~${comp.usd(volume):,.2f}\n", style="grey50")
+        t.append(f"      {label}\n", style=colors.get(label, "grey50"))
+        if label == "tool outputs":
+            for name, v in sorted(comp.outputs.items(), key=lambda x: -x[1].volume)[:3]:
+                t.append(f"        {name:<10}{comp.share(v.volume):>6.1%}\n", style="grey42")
+    share, usd = comp.what_if_compress_outputs()
+    t.append(f"\nshrinking tool outputs 70% ≈ −{share:.1%}", style="grey62")
+    t.append(f"  (~${usd:,.2f})", style="spring_green3")
+    return Panel(t, title="where tokens go (estimate)", border_style="grey50", padding=(0, 1), expand=True)
+
+
 def status_line(store: Store, mode: str, now: float | None = None) -> Text:
     run, total = store.running_subagents(now)
     s = store.summary()
