@@ -147,6 +147,10 @@ class Store:
         if node is None:
             return
         d = ev.data
+        if d.get("dup"):                      # another content block of an already counted request
+            if d.get("tool"):
+                node.activity = d["tool"]
+            return
         u = d.get("usage") or {}
         fresh = u.get("input_tokens", 0)
         c_write = u.get("cache_creation_input_tokens", 0)

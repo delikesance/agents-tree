@@ -89,3 +89,41 @@ def test_cost_panel_and_boxes_show_cache_hit():
     assert "cache hit" in text and "90.0%" in text and "saved" in text
     box = render.tree_view(s, 100, 0, None, True).plain
     assert "cache 90%" in box
+
+
+def test_usage_repeated_on_every_content_block_line_is_counted_once():
+    import json
+    from agents_tree.sources.transcript import TranscriptParser
+    usage_ = {"input_tokens": 10, "cache_read_input_tokens": 1000, "output_tokens": 50}
+    block_lines = [  # one request, three transcript lines (thinking, text, tool_use), identical usage
+        {"type": "assistant", "timestamp": "2026-10-09T10:00:00Z", "message": {
+            "id": "msg_1", "model": "claude-sonnet-5-5", "usage": usage_, "content": [{"type": "thinking", "thinking": ""}]}},
+        {"type": "assistant", "timestamp": "2026-10-09T10:00:01Z", "message": {
+            "id": "msg_1", "model": "claude-sonnet-5-5", "usage": usage_, "content": [{"type": "text", "text": "ok"}]}},
+        {"type": "assistant", "timestamp": "2026-10-09T10:00:02Z", "message": {
+            "id": "msg_1", "model": "claude-sonnet-5-5", "usage": usage_, "content": [
+                {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]}},
+        {"type": "assistant", "timestamp": "2026-10-09T10:00:09Z", "message": {
+            "id": "msg_2", "model": "claude-sonnet-5-5", "usage": usage_, "content": [{"type": "text", "text": "next"}]}},
+    ]
+    p, s = TranscriptParser(), Store()
+    for d in block_lines:
+        for e in p.parse(d):
+            s.apply(e)
+    main = s.nodes[MAIN]
+    assert main.turns == 2                                  # two API requests, not four lines
+    assert main.tokens_out == 100 and main.cache_read == 2000
+    assert main.activity == ""                              # the last request (msg_2) called no tool
+    one = pricing.turn_cost("claude-sonnet-5-5", 10, 0, 0, 1000, 50)
+    assert main.cost == pytest.approx(2 * one.total)
+
+
+def test_activity_follows_a_tool_call_on_a_later_line_of_the_same_request():
+    from agents_tree.sources.transcript import TranscriptParser
+    u = {"output_tokens": 1}
+    p, s = TranscriptParser(), Store()
+    for content in ([{"type": "text", "text": "x"}], [{"type": "tool_use", "id": "t", "name": "Edit", "input": {}}]):
+        for e in p.parse({"type": "assistant", "timestamp": "2026-10-09T10:00:00Z", "message": {
+                "id": "m", "model": "claude-sonnet-5-5", "usage": u, "content": content}}):
+            s.apply(e)
+    assert s.nodes[MAIN].turns == 1 and s.nodes[MAIN].activity == "Edit"
