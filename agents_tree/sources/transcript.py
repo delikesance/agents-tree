@@ -133,9 +133,21 @@ def session_files(session_jsonl: str | os.PathLike) -> list[tuple[Path, str, boo
     return files
 
 
+def meta_alias(path: Path, ts: float = 0.0) -> Event | None:
+    """Deterministic agent-id link from agent-<id>.meta.json ({"toolUseId": ...})."""
+    try:
+        tool_use_id = json.loads(path.with_suffix(".meta.json").read_text()).get("toolUseId")
+    except (OSError, ValueError):
+        return None
+    aid = path.stem.removeprefix("agent-")
+    return Event(ts, ALIAS, tool_use_id, data={"alias": aid}) if tool_use_id else None
+
+
 def read_session(session_jsonl: str | os.PathLike) -> list[Event]:
     events: list[Event] = []
     for path, aid, side in session_files(session_jsonl):
         events.extend(read_events(path, aid, side))
+        if side and (alias := meta_alias(path)):
+            events.append(alias)
     events.sort(key=lambda e: e.ts)
     return events

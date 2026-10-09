@@ -31,8 +31,13 @@ def family(model: str) -> str:
     return ""
 
 
-def cost(model: str, tokens_in: int, tokens_out: int) -> float:
+# Prompt-cache multipliers on the input price (estimates: write 1.25x, read 0.1x).
+CACHE_WRITE, CACHE_READ = 1.25, 0.1
+
+
+def cost(model: str, tokens_in: int, tokens_out: int, cache_write: int = 0, cache_read: int = 0) -> float:
     price = _table().get(family(model))
     if not price:
         return 0.0
-    return (tokens_in * price[0] + tokens_out * price[1]) / 1_000_000
+    inp = tokens_in + cache_write * CACHE_WRITE + cache_read * CACHE_READ
+    return (inp * price[0] + tokens_out * price[1]) / 1_000_000

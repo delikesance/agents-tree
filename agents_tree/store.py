@@ -13,6 +13,7 @@ class Store:
         self.jev = JevStats()
         self.log: list[tuple[float, str]] = []
         self._alias: dict[str, str] = {}
+        self._pending_alias: dict[str, str] = {}  # alias seen before its node exists
         self.nodes[MAIN] = AgentNode(MAIN, "main")
 
     # -- lookup ---------------------------------------------------------
@@ -57,6 +58,8 @@ class Store:
                          d.get("desc", ""), started=ev.ts)
         self.nodes[node.id] = node
         self.nodes[parent].children.append(node.id)
+        if node.id in self._pending_alias:
+            self._add_alias(node, self._pending_alias.pop(node.id))
         self._log(Event(ev.ts, LOG, data={"text": f"+ {node.kind} started"
                                           + (f" · {node.desc}" if node.desc else "")}))
 
@@ -73,6 +76,8 @@ class Store:
         alias = ev.data.get("alias")
         if node and alias:
             self._add_alias(node, alias)
+        elif alias:
+            self._pending_alias[ev.agent_id] = alias
 
     def _claim(self, agent_id: str) -> AgentNode | None:
         """Bind an unknown sidechain id to the oldest running subagent without an alias.
@@ -94,15 +99,17 @@ class Store:
             return
         d = ev.data
         u = d.get("usage") or {}
-        t_in = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
-                + u.get("cache_read_input_tokens", 0))
+        fresh = u.get("input_tokens", 0)
+        c_write = u.get("cache_creation_input_tokens", 0)
+        c_read = u.get("cache_read_input_tokens", 0)
+        t_in = fresh + c_write + c_read
         t_out = u.get("output_tokens", 0)
         node.turns += 1
         node.tokens_in += t_in
         node.tokens_out += t_out
         node.model = d.get("model") or node.model
         node.effort = d.get("effort") or node.effort
-        node.cost += pricing.cost(node.model, t_in, t_out)
+        node.cost += pricing.cost(node.model, fresh, t_out, c_write, c_read)
         if d.get("advisor_model"):
             self.advisor.model = d["advisor_model"]
 

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from ..model import AGENT_END, AGENT_START, MAIN, Event
-from .transcript import TranscriptParser, session_files
+from .transcript import TranscriptParser, meta_alias, session_files
 
 DEFAULT_EVENTS = os.path.expanduser("~/.claude/agents-tree-events.jsonl")
 
@@ -36,10 +36,12 @@ class TranscriptTailer:
         self._tails: dict[Path, tuple[_Tail, TranscriptParser]] = {}
 
     def poll(self) -> list[Event]:
+        events: list[Event] = []
         for path, aid, side in session_files(self.session):
             if path not in self._tails:
                 self._tails[path] = (_Tail(path), TranscriptParser(aid, side))
-        events: list[Event] = []
+                if side and (alias := meta_alias(path)):
+                    events.append(alias)
         for tail, parser in self._tails.values():
             for line in tail.lines():
                 try:

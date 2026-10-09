@@ -60,3 +60,41 @@ def test_replay_collapses_gaps_and_pauses():
     for _ in range(100):
         r.tick(1.0)
     assert r.done
+
+
+def test_cache_tokens_are_discounted():
+    from agents_tree import pricing
+    full = pricing.cost("claude-sonnet-5-5", 1_000_000, 0)
+    cached = pricing.cost("claude-sonnet-5-5", 0, 0, cache_read=1_000_000)
+    assert cached < full / 5
+
+
+def test_meta_alias_binds_before_node_exists(tmp_path):
+    from agents_tree.model import ALIAS, TURN
+    s = Store()
+    s.apply(Event(0, ALIAS, "tool1", data={"alias": "agentX"}))  # sorted first by ts
+    s.apply(Event(1, AGENT_START, "tool1", MAIN, {"kind": "worker"}))
+    s.apply(Event(2, TURN, "agentX", data={"model": "claude-haiku-5-5", "usage": {"output_tokens": 5}, "sidechain": True}))
+    assert s.nodes["tool1"].turns == 1
+
+
+def test_tailer_incremental(tmp_path):
+    import json
+    from agents_tree.sources.live import TranscriptTailer
+    p = tmp_path / "s.jsonl"
+    line = {"type": "assistant", "timestamp": "2026-10-09T10:00:00Z",
+            "message": {"model": "claude-sonnet-5-5", "usage": {"output_tokens": 1}, "content": []}}
+    p.write_text(json.dumps(line) + "\n" + json.dumps(line)[:20])  # second line is partial
+    t = TranscriptTailer(p)
+    assert len(t.poll()) == 1
+    assert t.poll() == []
+    with open(p, "a") as f:
+        f.write(json.dumps(line)[20:] + "\n")
+    assert len(t.poll()) == 1
+
+
+def test_cli_rejects_missing_transcript(capsys):
+    from agents_tree.cli import main
+    assert main(["live", "/nonexistent.jsonl"]) == 1
+    assert main(["replay", "/nonexistent.jsonl"]) == 1
+    assert "not found" in capsys.readouterr().err
