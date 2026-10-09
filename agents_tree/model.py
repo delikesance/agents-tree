@@ -34,9 +34,14 @@ class AgentNode:
     status: str = "running"        # running | done | failed
     desc: str = ""
     turns: int = 0
-    tokens_in: int = 0
+    tokens_in: int = 0             # all prompt tokens: fresh + cache writes + cache reads
     tokens_out: int = 0
-    cost: float = 0.0
+    fresh: int = 0                 # uncached prompt tokens
+    cache_write: int = 0
+    cache_read: int = 0
+    cost: float = 0.0              # estimated USD (known-priced turns only)
+    cost_parts: object = None      # pricing.Cost split by category (set on first priced turn)
+    unpriced_turns: int = 0        # turns whose model has no known price
     started: float = 0.0
     ended: float | None = None
     activity: str = ""            # tool the agent is using right now (from its last turn)

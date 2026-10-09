@@ -2,10 +2,36 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 
 from . import pricing
 from .model import (ADVISOR, AGENT_END, AGENT_START, ALIAS, JEV, LOG, MAIN, TURN,
                     AdvisorStats, AgentNode, Event, JevStats)
+
+
+@dataclass
+class Summary:
+    fresh: int = 0
+    write: int = 0
+    read: int = 0
+    out: int = 0
+    turns: int = 0
+    unpriced_turns: int = 0
+    cost: pricing.Cost = field(default_factory=pricing.Cost)
+
+    @property
+    def prompt(self) -> int:
+        return self.fresh + self.write + self.read
+
+    @property
+    def hit_rate(self) -> float | None:
+        """Share of prompt tokens served from cache (None before any prompt)."""
+        return self.read / self.prompt if self.prompt else None
+
+
+def hit_rate(fresh: int, write: int, read: int) -> float | None:
+    total = fresh + write + read
+    return read / total if total else None
 
 
 # A subagent that announced itself but shows no event for this long is not shown as running.
@@ -121,15 +147,26 @@ class Store:
         fresh = u.get("input_tokens", 0)
         c_write = u.get("cache_creation_input_tokens", 0)
         c_read = u.get("cache_read_input_tokens", 0)
-        t_in = fresh + c_write + c_read
         t_out = u.get("output_tokens", 0)
+        # The 1h/5m split is optional in usage; unsplit cache writes count as 5-minute.
+        w1h = min((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0), c_write)
+        w5m = c_write - w1h
         node.turns += 1
-        node.tokens_in += t_in
+        node.fresh += fresh
+        node.cache_write += c_write
+        node.cache_read += c_read
+        node.tokens_in += fresh + c_write + c_read
         node.tokens_out += t_out
         node.activity = d.get("tool", "")
         node.model = d.get("model") or node.model
         node.effort = d.get("effort") or node.effort
-        node.cost += pricing.cost(node.model, fresh, t_out, c_write, c_read)
+        cost = pricing.turn_cost(d.get("model") or node.model, fresh, w5m, w1h, c_read, t_out)
+        if cost is None:
+            node.unpriced_turns += 1
+        else:
+            node.cost_parts = node.cost_parts or pricing.Cost()
+            node.cost_parts.add(cost)
+            node.cost = node.cost_parts.total
         if d.get("advisor_model"):
             self.advisor.model = d["advisor_model"]
 
@@ -177,10 +214,19 @@ class Store:
         kids = self.nodes[node_id].children
         return list(kids) if show_all else [c for c in kids if self._alive(c, now)]
 
-    def totals(self) -> tuple[int, int, float]:
-        n = self.nodes.values()
-        return (sum(x.tokens_in for x in n), sum(x.tokens_out for x in n),
-                sum(x.cost for x in n))
+    def summary(self) -> "Summary":
+        """Session-wide token and cost totals, split by category."""
+        s = Summary()
+        for n in self.nodes.values():
+            s.fresh += n.fresh
+            s.write += n.cache_write
+            s.read += n.cache_read
+            s.out += n.tokens_out
+            s.turns += n.turns
+            s.unpriced_turns += n.unpriced_turns
+            if n.cost_parts:
+                s.cost.add(n.cost_parts)
+        return s
 
     def running_subagents(self, now: float | None = None) -> tuple[int, int]:
         subs = [n for n in self.nodes.values() if n.id != MAIN]

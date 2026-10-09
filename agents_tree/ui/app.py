@@ -48,6 +48,7 @@ class AgentsTreeApp(App):
         yield Static(render.legend(), id="header")
         with Horizontal():
             with Vertical(id="left"):
+                yield Static(id="cost")
                 yield Static(id="advisor")
                 yield Static(id="jev")
             yield VerticalScroll(Static(id="tree"), id="treebox")
@@ -94,8 +95,11 @@ class AgentsTreeApp(App):
         now = None if self.replay_mode else time.time()   # replays use event time
         # Only show panels for things that actually happened in this session.
         adv, jev = self.query_one("#advisor", Static), self.query_one("#jev", Static)
-        adv.display, jev.display = s.advisor.calls > 0, s.jev.forks > 0
-        self.query_one("#left").display = adv.display or jev.display
+        cost = self.query_one("#cost", Static)
+        adv.display, jev.display, cost.display = s.advisor.calls > 0, s.jev.forks > 0, s.summary().turns > 0
+        self.query_one("#left").display = adv.display or jev.display or cost.display
+        if cost.display:
+            cost.update(render.cost_view(s))
         if adv.display:
             adv.update(render.advisor_view(s))
         if jev.display:
