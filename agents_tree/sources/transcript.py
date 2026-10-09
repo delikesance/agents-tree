@@ -55,7 +55,7 @@ class TranscriptParser:
                 "model": msg.get("model", ""),
                 "effort": d.get("perTurnEffort") or d.get("effort") or "",
                 "usage": usage, "sidechain": self.sidechain,
-                "advisor_model": d.get("advisorModel")})
+                "advisor_model": d.get("advisorModel"), "tool": _last_tool(content)})
         for c in content:
             if c.get("type") not in ("tool_use", "server_tool_use"):
                 continue
@@ -96,6 +96,13 @@ class TranscriptParser:
             elif kind == "advisor":
                 yield Event(ts, ADVISOR, self.agent_id, data={
                     "advice": _text(c.get("content")).strip()[:200], "count": False})
+
+
+def _last_tool(content: list) -> str:
+    """Name of the last tool the assistant called in this message ('' if none)."""
+    names = [c.get("name", "") for c in content if isinstance(c, dict)
+             and c.get("type") in ("tool_use", "server_tool_use")]
+    return names[-1].split("__")[-1] if names else ""
 
 
 def _parse_json(text: str) -> dict:

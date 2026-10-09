@@ -39,6 +39,7 @@ class AgentNode:
     cost: float = 0.0
     started: float = 0.0
     ended: float | None = None
+    activity: str = ""            # tool the agent is using right now (from its last turn)
     last_active: float = 0.0       # timestamp of the last event seen for this agent
     children: list[str] = field(default_factory=list)
     aliases: set[str] = field(default_factory=set)

@@ -72,10 +72,15 @@ def node_box(store: Store, node_id: str, frame: int = 0, now: float | None = Non
     model = short_model(n.model) or "model n/a"
     if n.effort:
         model += f" · {n.effort}"
+    spin = SPINNER[frame % len(SPINNER)]
     if node_id == MAIN:
-        status, st_style = "main session", "bold"
+        if state == "stale":
+            idle = max(0, (store.clock if now is None else now) - (n.last_active or n.started))
+            status, st_style = f"◌ idle {_age(idle)}", "grey50"
+        else:
+            status, st_style = (f"{spin} {n.activity}" if n.activity else "main session"), "bold"
     elif running:
-        status, st_style = f"{SPINNER[frame % len(SPINNER)]} running", "bold green"
+        status, st_style = f"{spin} {n.activity or 'running'}", "bold green"
     elif state == "failed":
         status, st_style = "✗ failed", "bold red"
     elif state == "stale":
@@ -146,12 +151,13 @@ def _bus(width: int, anchors: list[int], parent: int | None, trunk: str | None, 
     return [(c, style) for c in chars]
 
 
-def subtree(store: Store, node_id: str, max_width: int, frame: int, now: float | None = None) -> Block:
+def subtree(store: Store, node_id: str, max_width: int, frame: int, now: float | None = None,
+            show_all: bool = True) -> Block:
     box = node_box(store, node_id, frame, now)
-    node = store.nodes[node_id]
-    if not node.children:
+    child_ids = store.visible_children(node_id, now, show_all)
+    if not child_ids:
         return Block(box, BOX_W, BOX_W // 2)
-    kids = [subtree(store, c, max_width, frame, now) for c in node.children]
+    kids = [subtree(store, c, max_width, frame, now, show_all) for c in child_ids]
     line = "grey50"
 
     # Group children into rows that fit the available width.
@@ -214,9 +220,14 @@ def _to_text(rows: list[Row]) -> Text:
     return out
 
 
-def tree_view(store: Store, max_width: int = 120, frame: int = 0, now: float | None = None) -> Text:
-    block = subtree(store, MAIN, max(max_width, BOX_W + 4), frame, now)
-    return _to_text(block.rows)
+def tree_view(store: Store, max_width: int = 120, frame: int = 0, now: float | None = None,
+              show_all: bool = True) -> Text:
+    block = subtree(store, MAIN, max(max_width, BOX_W + 4), frame, now, show_all)
+    rows = block.rows
+    if not show_all and not store.visible_children(MAIN, now, False):
+        msg = "no agent running"
+        rows = rows + [[(" ", "")] * max(0, block.anchor - len(msg) // 2) + [(c, "grey50") for c in msg]]
+    return _to_text(rows)
 
 
 # -- side panels --------------------------------------------------------

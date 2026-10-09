@@ -26,6 +26,7 @@ class AgentsTreeApp(App):
     #status { height: 1; padding: 0 1; }
     """
     BINDINGS = [("q", "quit", "Quit"), ("s", "pick_session", "Session"),
+                ("h", "toggle_history", "History"),
                 ("space", "pause", "Pause"), ("plus,equals_sign", "faster", "Faster"),
                 ("minus", "slower", "Slower")]
 
@@ -41,6 +42,7 @@ class AgentsTreeApp(App):
         self.hooks = hooks
         self.projects_dir = projects_dir
         self.replay_mode = replay is not None
+        self.show_all = self.replay_mode   # live: only agents running now; replay: everything
 
     def compose(self) -> ComposeResult:
         yield Static(render.legend(), id="header")
@@ -100,15 +102,20 @@ class AgentsTreeApp(App):
             jev.update(render.jev_view(s))
         width = max(self.size.width - (44 if self.query_one("#left").display else 4), 40)
         self.frame += 1
-        self.query_one("#tree", Static).update(render.tree_view(s, width, self.frame, now))
+        self.query_one("#tree", Static).update(render.tree_view(s, width, self.frame, now, self.show_all))
         self.query_one("#log", Static).update(render.log_view(s))
         if self.replay:
             r = self.replay
             mode = f"replay {r.pos}/{len(r.events)} x{r.speed:g}" + (" [paused]" if r.paused else "")
         else:
             mode = "live"
+        mode += f" · view: {'all' if self.show_all else 'active'}"
         mode += f" · session {self.session.stem[:8]}" if self.session else " · no session (press s)"
         self.query_one("#status", Static).update(render.status_line(s, mode, now))
+
+    def action_toggle_history(self) -> None:
+        self.show_all = not self.show_all
+        self.refresh_views()
 
     def action_pause(self) -> None:
         if self.replay:
