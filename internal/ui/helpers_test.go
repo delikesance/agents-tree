@@ -67,11 +67,14 @@ func (m *Model) run(cmd tea.Cmd) {
 	}
 }
 
-// press sends key presses ("i", "enter", "ctrl+k", ...) and runs the commands they return.
+// press sends key presses ("i", "enter", "ctrl+k", ...). Only enter's command (the send) is run: the others
+// are cursor blinks and ticks that would just sleep.
 func (m *Model) press(keys ...string) {
 	for _, k := range keys {
 		_, cmd := m.Update(KeyFromString(k))
-		m.run(cmd)
+		if k == "enter" {
+			m.run(cmd)
+		}
 	}
 }
 
@@ -222,3 +225,44 @@ func byID(msgs []*model.Message) map[string]*model.Message {
 }
 
 func lines(s string) []string { return strings.Split(s, "\n") }
+
+// richEvents is a busy session: usage on every agent, advisor + JEV activity, seven subagents (three of them
+// still running at t=1100), every message role, some wide and some unbreakable text.
+func richEvents() []model.Event {
+	ev := []model.Event{
+		{TS: 1000, Kind: model.Turn, AgentID: model.Main, Model: sonnet, Tool: "Bash", AdvisorModel: "claude-opus-5-5",
+			Usage: &model.Usage{Input: 1000, CacheCreation: 2000, CacheRead: 50000, Output: 500}},
+		{TS: 1001, Kind: model.Advisor, AgentID: model.Main, Model: "claude-opus-5-5"},
+		{TS: 1002, Kind: model.Advisor, AgentID: model.Main, Advice: "verify the auth claims first", NoCount: true},
+	}
+	conf := 0.86
+	ev = append(ev, model.Event{TS: 1003, Kind: model.Jev, AgentID: model.Main, Decision: "jev_which_file", Confidence: &conf},
+		model.Event{TS: 1004, Kind: model.Jev, AgentID: model.Main, Decision: "jev_retry_or_stop", Escalate: true})
+	kinds := []string{"explorer", "worker", "researcher", "dispatcher", "worker", "explorer", "researcher"}
+	for i, k := range kinds {
+		id := "ag" + string(rune('1'+i))
+		mdl := haiku
+		if k == "worker" {
+			mdl = sonnet
+		}
+		ev = append(ev, evStart(1010+float64(i), id, model.Main, k, "task number "+string(rune('1'+i)), mdl),
+			model.Event{TS: 1011 + float64(i), Kind: model.Turn, AgentID: id, Model: mdl, Tool: "Read",
+				Usage: &model.Usage{Input: 100, CacheRead: 4000, Output: 50}},
+			evMsg(1010+float64(i), model.Message{ID: "deleg:" + id, Role: "delegation", Kind: k, Desc: "task number " + string(rune('1'+i)),
+				Text: "Please do the thing.", Target: id}))
+		if i >= 3 { // four finish, three keep running
+			ev = append(ev, evEnd(1020+float64(i), id, "done"),
+				evMsg(1020+float64(i), model.Message{ID: "rep:" + id, Role: "report", Text: "finished " + id, Target: id, Status: "done", Duration: fp(9)}))
+		}
+	}
+	ev = append(ev,
+		evMsg(1005, model.Message{ID: "u1", Role: "user", Text: "build the login page\nwith dark mode"}),
+		evMsg(1006, model.Message{ID: "a1", Role: "assistant", Model: sonnet,
+			Text: "日本語のテキストはとても長い行になることがあります。幅の計算が正しくなければ枠が崩れます。\n" + strings.Repeat("x", 300)}),
+		evMsg(1007, model.Message{ID: "t1", Role: "tool", Tool: "Bash", Detail: strings.Repeat("very-long-command ", 20), Status: "ok", Duration: fp(1.5)}),
+		evMsg(1008, model.Message{ID: "s1", Role: "system", Text: "Stop hook feedback:\nuntracked files"}),
+		evMsg(1100, model.Message{ID: "a2", Role: "assistant", Model: sonnet, Text: "all good"}),
+		evTurn(1100, "ag1", haiku, "Grep", 10), evTurn(1100, "ag2", sonnet, "Edit", 10), evTurn(1100, "ag3", haiku, "WebFetch", 10),
+	)
+	return ev
+}
