@@ -52,16 +52,16 @@ func TestUserMessageHasABarOnEveryLineLabelAndTime(t *testing.T) {
 	m := &model.Message{ID: "u9", TS: 1000, AgentID: model.Main, Role: "user", Text: "première ligne\ndeuxième ligne\n\ntroisième"}
 	got := msgPlain(m, msgCtx(s))
 	ls := lines(got)
-	if len(ls) < 5 {
-		t.Fatalf("want header + 4 body lines, got %d:\n%s", len(ls), got)
+	if len(ls) < 7 {
+		t.Fatalf("want padding + header + 4 body lines + padding, got %d:\n%s", len(ls), got)
 	}
 	for i, l := range ls {
 		if !strings.HasPrefix(l, "▌") {
 			t.Errorf("line %d lacks the user bar: %q", i, l)
 		}
 	}
-	if !strings.Contains(ls[0], "you") || !strings.Contains(ls[0], hhmm(1000)) {
-		t.Errorf("header must carry the label and time: %q", ls[0])
+	if !strings.Contains(ls[1], "you") || !strings.Contains(ls[1], hhmm(1000)) {
+		t.Errorf("header must carry the label and time: %q", ls[1])
 	}
 	for _, want := range []string{"première ligne", "deuxième ligne", "troisième"} {
 		if !strings.Contains(got, want) {
@@ -463,7 +463,7 @@ func TestFoldFooterKeepsTheUserBarAndTheSubagentRail(t *testing.T) {
 	c := msgCtx(s)
 	u := &model.Message{ID: "u9", TS: 1000, AgentID: model.Main, Role: "user", Text: msgNumbered(20, "u")}
 	ls := lines(msgPlain(u, c))
-	if last := ls[len(ls)-1]; !strings.HasPrefix(last, "▌") || !strings.Contains(last, "e to expand") {
+	if last := ls[len(ls)-2]; !strings.HasPrefix(last, "▌") || !strings.Contains(last, "e to expand") {
 		t.Errorf("user footer: %q", last)
 	}
 	a := &model.Message{ID: "a9", TS: 1000, AgentID: "ag1", Role: "assistant", Text: msgNumbered(20, "s")}

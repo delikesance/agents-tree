@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -11,9 +12,9 @@ import (
 )
 
 const (
-	foldLines = 14 // lines of a long message shown before "… +N lines"
-	chatMax   = 108
-	margin    = 2
+	foldLines = 14  // lines of a long message shown before "… +N lines"
+	chatMax   = 120 // widest text column; wider terminals get the side panel instead
+	margin    = 3
 )
 
 // rctx is everything a message depends on besides the message itself.
@@ -139,16 +140,26 @@ func header(left string, ts float64) string {
 	return left + fg(colFaint).Render(" · "+hhmm(ts))
 }
 
+// renderUser draws your message as a tinted block with air above and below: it must stand out at a glance.
 func renderUser(m *model.Message, c rctx) string {
 	body, hidden := fold(m.Text, c.expanded, foldLines)
-	bar := fg(colUser).Render("▌ ")
-	lines := []string{bar + header(bold(colUser).Render("you"), m.TS)}
-	for _, l := range strings.Split(wrap(body, c.width-2), "\n") {
-		lines = append(lines, bar+lipgloss.NewStyle().Foreground(colText).Render(l))
+	on := func(fgc color.Color, bold bool, s string) string {
+		return lipgloss.NewStyle().Foreground(fgc).Background(colUserBg).Bold(bold).Render(s)
+	}
+	row := func(inner string, w int) string {
+		pad := max(c.width-2-w, 0)
+		return on(colUser, false, "▌ ") + inner + on(colText, false, strings.Repeat(" ", pad))
+	}
+	blank := on(colUser, false, "▌ ") + on(colText, false, strings.Repeat(" ", c.width-2))
+	head := on(colUser, true, "you") + on(colFaint, false, " · "+hhmm(m.TS))
+	lines := []string{blank, row(head, lipgloss.Width("you · "+hhmm(m.TS)))}
+	for _, l := range strings.Split(wrap(body, c.width-3), "\n") {
+		lines = append(lines, row(on(colText, false, l), lipgloss.Width(l)))
 	}
 	if hidden > 0 {
-		lines = append(lines, bar+footer(hidden))
+		lines = append(lines, row(on(colFaint, false, fmt.Sprintf("… +%d lines  (e to expand)", hidden)), 24))
 	}
+	lines = append(lines, blank)
 	return strings.Join(lines, "\n")
 }
 
