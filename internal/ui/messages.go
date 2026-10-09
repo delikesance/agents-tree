@@ -168,7 +168,7 @@ func renderAssistant(m *model.Message, c rctx) string {
 	if hidden > 0 {
 		text += "\n" + footer(hidden)
 	}
-	return nest(c, m, header(head, m.TS)+"\n"+text)
+	return nest(c, m, clip(header(head, m.TS), w)+"\n"+text)
 }
 
 func toolIcon(m *model.Message, live bool, frame int) string {
@@ -185,8 +185,9 @@ func toolIcon(m *model.Message, live bool, frame int) string {
 
 func renderTool(m *model.Message, c rctx, width int) string {
 	dur := fmtSecs(m.Duration)
-	left := fg(colFaint).Render("┃ ") + toolIcon(m, agentLive(c, m), c.frame) + " " +
-		lipgloss.NewStyle().Bold(true).Foreground(colText).Render(m.Tool) + " "
+	prefix := fg(colFaint).Render("┃ ") + toolIcon(m, agentLive(c, m), c.frame) + " "
+	name := clip(m.Tool, max(width-lipgloss.Width(prefix)-lipgloss.Width(dur)-2, 4))
+	left := prefix + lipgloss.NewStyle().Bold(true).Foreground(colText).Render(name) + " "
 	room := width - lipgloss.Width(left) - lipgloss.Width(dur) - 1
 	detail := fg(colGrey).Render(clip(m.Detail, max(room, 0)))
 	gap := max(width-lipgloss.Width(left)-lipgloss.Width(detail)-lipgloss.Width(dur), 1)

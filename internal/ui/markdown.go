@@ -40,7 +40,7 @@ func renderMarkdown(src string, width int) string {
 		}
 		switch {
 		case inFence:
-			out = append(out, fg(colCode).Render("  "+line))
+			out = append(out, fg(colCode).Render(clip("  "+line, width)))
 		case reHead.MatchString(line):
 			m := reHead.FindStringSubmatch(line)
 			out = append(out, lipgloss.NewStyle().Bold(true).Underline(len(m[1]) == 1).Render(inline(m[2])))

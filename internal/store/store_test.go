@@ -406,3 +406,120 @@ func TestAdvisorAndJev(t *testing.T) {
 		t.Errorf("jev = %+v", s.Jev)
 	}
 }
+
+func notification(ts, taskID, toolUseID, status, summary string) string {
+	return line(m{"type": "queue-operation", "operation": "enqueue", "timestamp": ts, "content": "<task-notification>\n<task-id>" + taskID +
+		"</task-id>\n<tool-use-id>" + toolUseID + "</tool-use-id>\n<status>" + status + "</status>\n<summary>" + summary + "</summary>\n</task-notification>"})
+}
+
+func asyncLaunch(ts, tid, agentID string) string {
+	return line(m{"type": "user", "timestamp": ts, "toolUseResult": m{"isAsync": true, "status": "async_launched", "agentId": agentID},
+		"message": m{"content": []any{m{"type": "tool_result", "tool_use_id": tid, "content": []any{text("Async agent launched successfully.")}}}}})
+}
+
+func subTurn(id, ts string) string {
+	return line(m{"type": "assistant", "isSidechain": true, "timestamp": ts, "message": m{"id": id, "model": "claude-sonnet-5-5",
+		"usage": usage(5), "content": []any{toolUse("x"+id, "Bash", m{"command": "ls"})}}})
+}
+
+func TestBackgroundAgentKeepsRunningUntilItsNotification(t *testing.T) {
+	launch := []string{
+		assistant("a", "2026-10-09T10:00:00Z", toolUse("ag1", "Agent", m{"subagent_type": "worker", "description": "write tests", "prompt": "do it", "run_in_background": true})),
+		asyncLaunch("2026-10-09T10:00:01Z", "ag1", "aX"), // returns at once: the agent is NOT finished
+	}
+	sub := map[string][2]any{"aX": {m{"toolUseId": "ag1"}, []string{
+		line(m{"type": "user", "isSidechain": true, "uuid": "p", "message": m{"role": "user", "content": "do it"}}),
+		subTurn("s1", "2026-10-09T10:00:05Z"), subTurn("s2", "2026-10-09T10:01:00Z"),
+	}}}
+	s := build(t, session(t, launch, sub))
+	n := s.Nodes["ag1"]
+	if n.Status != "running" || n.Turns != 2 {
+		t.Fatalf("after launch: status=%s turns=%d (a background agent must keep running)", n.Status, n.Turns)
+	}
+	if got := s.State(n, 0); got != "running" {
+		t.Errorf("state = %s", got)
+	}
+	if r, tot := s.RunningSubagents(0); r != 1 || tot != 1 {
+		t.Errorf("running = %d/%d", r, tot)
+	}
+	// its notification arrives: now it is done
+	lines := append(launch, notification("2026-10-09T10:02:00Z", "aX", "ag1", "completed", "Agent finished"))
+	s = build(t, session(t, lines, sub))
+	if n := s.Nodes["ag1"]; n.Status != "done" {
+		t.Errorf("after notification status = %s", n.Status)
+	}
+	if d := msgByID(s)["deleg:ag1"]; d == nil || d.Status != "done" {
+		t.Errorf("delegation = %+v", d)
+	}
+	// a silent background agent without a notification is shown as stale, not as running forever
+	if got := s.State(&model.AgentNode{ID: "z", Status: "running", Started: 1, LastActive: 1}, 1+store.StaleSecs+1); got != "stale" {
+		t.Errorf("silent agent = %s", got)
+	}
+}
+
+func TestFailedBackgroundAgentGetsAFailedReport(t *testing.T) {
+	lines := []string{
+		assistant("a", "2026-10-09T10:00:00Z", toolUse("ag1", "Agent", m{"subagent_type": "worker", "prompt": "x", "run_in_background": true})),
+		asyncLaunch("2026-10-09T10:00:01Z", "ag1", "aX"),
+		notification("2026-10-09T10:00:30Z", "aX", "ag1", "failed", "Agent crashed"),
+	}
+	s := build(t, session(t, lines, nil))
+	if s.Nodes["ag1"].Status != "failed" {
+		t.Errorf("status = %s", s.Nodes["ag1"].Status)
+	}
+	if r := msgByID(s)["rep:ag1"]; r == nil || r.Status != "failed" || r.Text != "Agent crashed" {
+		t.Errorf("report = %+v", r)
+	}
+}
+
+func handback(ts, from, report string) string {
+	return line(m{"type": "user", "timestamp": ts, "isMeta": true, "message": m{"role": "user", "content": []any{text(
+		"<system-reminder>\nAnother Claude session sent a message while you were working:\n<agent-message from=\"" + from + "\">\n" +
+			"[Subagent hand-back] The text below is the final report of a subagent.\n  The report follows:\n  " + report + "\n</agent-message>\n</system-reminder>")}}})
+}
+
+func TestHandbackMessageBecomesTheAgentsReport(t *testing.T) {
+	lines := []string{
+		assistant("a", "2026-10-09T10:00:00Z", toolUse("ag1", "Agent", m{"subagent_type": "worker", "prompt": "x", "run_in_background": true})),
+		asyncLaunch("2026-10-09T10:00:01Z", "ag1", "aX"),
+		handback("2026-10-09T10:05:00Z", "aX", "All three tasks are done.\n  Tests pass."),
+		notification("2026-10-09T10:05:01Z", "aX", "ag1", "completed", "Agent finished"),
+	}
+	s := build(t, session(t, lines, nil))
+	var reports []*model.Message
+	for _, x := range s.Messages {
+		if x.Role == "report" {
+			reports = append(reports, x)
+		}
+	}
+	if len(reports) != 1 || reports[0].Text != "All three tasks are done.\nTests pass." || s.Resolve(reports[0].Target) != "ag1" {
+		t.Fatalf("reports = %+v", reports)
+	}
+	for _, x := range s.Messages { // the injected reminder itself is system noise, not a chat message of yours
+		if x.Role == "user" {
+			t.Errorf("hand-back leaked as a user message: %+v", x)
+		}
+	}
+}
+
+func TestStubReportIsReplacedByTheLongerHandbackAndNotDuplicated(t *testing.T) {
+	// a synchronous agent: the tool result is a stub, the real report came as a hand-back just before it
+	lines := []string{
+		assistant("a", "2026-10-09T10:00:00Z", toolUse("ag1", "Agent", m{"subagent_type": "explorer", "prompt": "x"})),
+		handback("2026-10-09T10:00:08Z", "aX", "Real report with the findings of the agent."),
+		line(m{"type": "user", "timestamp": "2026-10-09T10:00:09Z", "toolUseResult": m{"agentId": "aX"}, "message": m{"content": []any{
+			m{"type": "tool_result", "tool_use_id": "ag1", "content": []any{text("The agent's report was delivered as a message.")}}}}}),
+	}
+	s := build(t, session(t, lines, nil))
+	n := 0
+	var rep *model.Message
+	for _, x := range s.Messages {
+		if x.Role == "report" {
+			n++
+			rep = x
+		}
+	}
+	if n != 1 || rep.Text != "Real report with the findings of the agent." {
+		t.Errorf("reports = %d, text %q", n, rep.Text)
+	}
+}
