@@ -83,6 +83,7 @@ class TranscriptParser:
         self._tool_ts: dict[str, float] = {}            # tool_use_id -> timestamp of the call
         self._seen_prompt = False                       # sidechain: first user turn = delegated prompt
         self._n = 0                                     # fallback id counter
+        self._seen_msg: set[str] = set()                # API message ids whose usage was already counted
 
     def _id(self, d: dict, suffix: str = "") -> str:
         self._n += 1
@@ -100,8 +101,14 @@ class TranscriptParser:
 
     def _assistant(self, d, msg, content, ts):
         usage = msg.get("usage")
+        mid = msg.get("id")
+        # Claude Code writes one transcript line per content block, each repeating the usage of the
+        # whole API request: count that usage once per message id.
+        dup = bool(mid) and mid in self._seen_msg
+        if mid:
+            self._seen_msg.add(mid)
         if usage:
-            yield Event(ts, TURN, self.agent_id, data={
+            yield Event(ts, TURN, self.agent_id, data={"dup": dup,
                 "model": msg.get("model", ""),
                 "effort": d.get("perTurnEffort") or d.get("effort") or "",
                 "usage": usage, "sidechain": self.sidechain,
