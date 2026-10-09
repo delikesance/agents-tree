@@ -33,6 +33,9 @@ const usage = `agents-tree: visualise Claude Code agents, chat with them, see wh
   agents-tree context [session.jsonl] [--recent N]
                                       where a session's input tokens and money go
   agents-tree hook                    Claude Code hook: reads the payload on stdin, appends an event
+  agents-tree compress                Claude Code PostToolUse hook: shortens long tool output (same shape)
+  agents-tree hooks install|uninstall|status [--settings PATH] [--apply]
+                                      manage those hooks in settings.json (dry run unless --apply)
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -53,6 +56,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runContext(args[1:], stdout, stderr)
 	case "hook":
 		return runHook(os.Stdin, stderr)
+	case "compress":
+		return runCompress(os.Stdin, stdout)
+	case "hooks":
+		return runHooks(args[1:], stdout, stderr)
 	case "render": // developer aid: one frame of a session as ANSI text
 		return runRender(args[1:], stdout, stderr)
 	}

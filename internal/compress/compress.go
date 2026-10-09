@@ -236,11 +236,16 @@ func (r *run) truncate(orig, cleaned string, min int, failed bool) (string, bool
 		return "", false
 	}
 	var build func(path string) string
-	lines := strings.Split(cleaned, "\n")
+	trailing := ""
+	body := cleaned
+	if strings.HasSuffix(body, "\n") {
+		body, trailing = body[:len(body)-1], "\n"
+	}
+	lines := strings.Split(body, "\n")
 	if omitted := len(lines) - head - tail; omitted >= 2 {
 		build = func(path string) string {
 			marker := fmt.Sprintf("… %d lines omitted (full output: %s) …", omitted, path)
-			return strings.Join(lines[:head], "\n") + "\n" + marker + "\n" + strings.Join(lines[len(lines)-tail:], "\n")
+			return strings.Join(lines[:head], "\n") + "\n" + marker + "\n" + strings.Join(lines[len(lines)-tail:], "\n") + trailing
 		}
 	}
 	hb, tb := min*6/10, min*4/10
@@ -254,6 +259,10 @@ func (r *run) truncate(orig, cleaned string, min int, failed bool) (string, bool
 	// size check with a placeholder path of realistic length
 	probe := filepath.Join(dir, strings.Repeat("0", 20)+".txt")
 	if build == nil || len(build(probe)) >= len(cleaned) {
+		// too few lines to drop whole lines: cut bytes, but only when lines are really long
+		if len(cleaned)/len(lines) <= 200 {
+			return "", false
+		}
 		build = byteMode
 	}
 	if len(build(probe)) >= len(cleaned) {
