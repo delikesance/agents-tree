@@ -286,6 +286,20 @@ func (s *Store) message(ev model.Event) {
 	if _, dup := s.msgByID[m.ID]; dup { // re-reading a line must not duplicate it
 		return
 	}
+	if m.Role == "report" && m.Target != "" {
+		// A report can arrive twice (the tool-result stub and the hand-back message that carries the
+		// real text): keep one, preferring the hand-back.
+		for i := len(s.Messages) - 1; i >= 0; i-- {
+			o := s.Messages[i]
+			if o.Role == "report" && o.Target != "" && s.Resolve(o.Target) == s.Resolve(m.Target) {
+				if m.Kind == "handback" && o.Kind != "handback" {
+					o.Text, o.Status, o.Kind = m.Text, m.Status, "handback"
+					o.Rev++
+				}
+				return
+			}
+		}
+	}
 	s.Messages = append(s.Messages, m)
 	s.msgByID[m.ID] = m
 	if len(s.Messages) > MaxMessages {

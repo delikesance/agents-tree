@@ -217,6 +217,10 @@ func (p *Parser) Parse(d obj) []model.Event {
 	ts := tsOf(str(d, "timestamp"))
 	msg := sub(d, "message")
 	switch str(d, "type") {
+	case "queue-operation": // background task notifications are queued here
+		if str(d, "operation") == "enqueue" {
+			return p.notification(ts, str(d, "content"))
+		}
 	case "assistant":
 		if content, ok := msg["content"].([]any); ok {
 			return p.assistant(d, msg, content, ts)
@@ -321,6 +325,73 @@ func (p *Parser) user(d obj, blocks []any, ts float64) []model.Event {
 	return out
 }
 
+var (
+	reNotif    = regexp.MustCompile(`(?s)<task-notification>(.*?)</task-notification>`)
+	reAgentMsg = regexp.MustCompile(`(?s)<agent-message from="([^"]+)">\s*(.*?)</agent-message>`)
+)
+
+func xmlField(s, name string) string {
+	m := regexp.MustCompile(`(?s)<` + name + `>(.*?)</` + name + `>`).FindStringSubmatch(s)
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
+// notification handles "<task-notification>" (a background agent or command finished): it ends the
+// agent whose launch tool_result returned immediately, and updates the tool lines.
+func (p *Parser) notification(ts float64, content string) []model.Event {
+	m := reNotif.FindStringSubmatch(content)
+	if m == nil {
+		return nil
+	}
+	body := m[1]
+	tid, status := xmlField(body, "tool-use-id"), xmlField(body, "status")
+	if tid == "" {
+		return nil
+	}
+	end, msgStatus := "done", "ok"
+	switch status {
+	case "completed", "":
+	default: // failed, killed, cancelled...
+		end, msgStatus = "failed", "error"
+	}
+	out := []model.Event{
+		{TS: ts, Kind: model.AgentEnd, AgentID: tid, Status: end},
+		{TS: ts, Kind: model.MsgUpdate, AgentID: p.AgentID, MsgID: tid, Status: msgStatus},
+		{TS: ts, Kind: model.MsgUpdate, AgentID: p.AgentID, MsgID: "deleg:" + tid, Status: end},
+	}
+	if end == "failed" { // a failed agent sends no report: say so
+		out = append(out, model.Event{TS: ts, Kind: model.Message_, AgentID: p.AgentID, Msg: &model.Message{
+			ID: "rep:" + tid, TS: ts, AgentID: p.AgentID, Role: "report", Status: "failed", Target: tid,
+			Text: cut(xmlField(body, "summary"), maxText)}})
+	}
+	return out
+}
+
+// handbacks extracts reports that background agents deliver as "<agent-message from=...>" reminders.
+func (p *Parser) handbacks(text string, ts float64) []model.Event {
+	var out []model.Event
+	for _, m := range reAgentMsg.FindAllStringSubmatch(text, -1) {
+		body := m[2]
+		if i := strings.Index(body, "The report follows:"); i >= 0 {
+			body = body[i+len("The report follows:"):]
+		}
+		lines := strings.Split(body, "\n")
+		for i, l := range lines {
+			lines[i] = strings.TrimPrefix(l, "  ")
+		}
+		report := strings.TrimSpace(strings.Join(lines, "\n"))
+		if report == "" {
+			continue
+		}
+		out = append(out, model.Event{TS: ts, Kind: model.Message_, AgentID: p.AgentID, Msg: &model.Message{
+			ID: "rep:" + m[1], TS: ts, AgentID: p.AgentID, Role: "report", Status: "done", Target: m[1],
+			Kind: "handback", Text: cut(report, maxText)}})
+	}
+	return out
+}
+
 func (p *Parser) userMessage(d obj, blocks []any, ts float64) []model.Event {
 	if p.Sidechain && !p.seenPrompt {
 		p.seenPrompt = true // the delegated prompt is already shown as the delegation
@@ -340,7 +411,9 @@ func (p *Parser) userMessage(d obj, blocks []any, ts float64) []model.Event {
 			images++
 		}
 	}
-	cleaned := CleanText(strings.Join(texts, "\n"))
+	joined := strings.Join(texts, "\n")
+	hand := p.handbacks(joined, ts)
+	cleaned := CleanText(joined)
 	if images > 0 {
 		label := "image"
 		if images > 1 {
@@ -352,7 +425,7 @@ func (p *Parser) userMessage(d obj, blocks []any, ts float64) []model.Event {
 		cleaned += "▣ " + label
 	}
 	if cleaned == "" {
-		return nil
+		return hand
 	}
 	origin := sub(d, "origin")
 	human := str(origin, "kind") == "human" || str(d, "turnOrigin") == "human" || (origin == nil && !truthy(d, "isMeta"))
@@ -363,8 +436,8 @@ func (p *Parser) userMessage(d obj, blocks []any, ts float64) []model.Event {
 	if strings.HasPrefix(cleaned, "[Request interrupted") {
 		role = "system"
 	}
-	return []model.Event{{TS: ts, Kind: model.Message_, AgentID: p.AgentID, Msg: &model.Message{
-		ID: p.id(d, ""), TS: ts, AgentID: p.AgentID, Role: role, Text: cut(cleaned, maxText)}}}
+	return append(hand, model.Event{TS: ts, Kind: model.Message_, AgentID: p.AgentID, Msg: &model.Message{
+		ID: p.id(d, ""), TS: ts, AgentID: p.AgentID, Role: role, Text: cut(cleaned, maxText)}})
 }
 
 func (p *Parser) toolResult(d, c obj, ts float64) []model.Event {
@@ -397,10 +470,16 @@ func (p *Parser) toolResult(d, c obj, ts float64) []model.Event {
 		if failed {
 			end = "failed"
 		}
-		if res := sub(d, "toolUseResult"); res != nil {
+		res := sub(d, "toolUseResult")
+		if res != nil {
 			if aid := str(res, "agentId"); aid != "" {
 				out = append(out, model.Event{TS: ts, Kind: model.Alias, AgentID: tid, AliasID: aid})
 			}
+		}
+		if res != nil && (truthy(res, "isAsync") || str(res, "status") == "async_launched") {
+			// Launched in the background: this result only says "started". The agent keeps running until
+			// its <task-notification> (or until it goes silent); its report arrives as a hand-back message.
+			return out
 		}
 		report := strings.TrimSpace(strings.SplitN(textOf(c["content"]), "agentId:", 2)[0])
 		out = append(out,
