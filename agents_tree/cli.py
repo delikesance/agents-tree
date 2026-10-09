@@ -26,8 +26,14 @@ def main(argv: list[str] | None = None) -> int:
         if not path:
             print("no session transcript found; pass a .jsonl path", file=sys.stderr)
             return 1
+        if not os.path.isfile(path):
+            print(f"session transcript not found: {path}", file=sys.stderr)
+            return 1
         make_live(path, hooks=not args.no_hooks).run()
     else:
+        if not os.path.isfile(args.session):
+            print(f"session transcript not found: {args.session}", file=sys.stderr)
+            return 1
         AgentsTreeApp(replay=Replay(read_session(args.session), speed=args.speed)).run()
     return 0
 
