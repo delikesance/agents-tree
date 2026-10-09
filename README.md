@@ -1,27 +1,80 @@
 # agents-tree
 
-TUI that visualises Claude Code behaviour as an agent tree: main session, subagents
-(worker / explorer / researcher / dispatcher), advisor calls, JEV forks, tokens and cost.
+Terminal UI for Claude Code sessions. It follows a session transcript live (or replays one) and shows:
+
+- a chat: one box per message (you, Claude, tool calls, delegations to subagents and their reports);
+- an agent rail: the agents running right now (main, subagents, advisor, JEV forks), each with its current tool;
+- an optional tree view of the agents (`t`);
+- cost with prompt-cache accounting (uncached input, cache writes and reads, output, hit rate, savings);
+- "where tokens go": which parts of the context (system prompt, tool outputs per tool, your messages...) are re-sent on every request;
+- a message box that sends your text to Claude Code through a `claude -p` process resumed on the followed session.
+
+## Install
+
+Go 1.26 or newer.
 
 ```
-pip install -e '.[dev]'
-agents-tree live                     # follow the latest session of the current project
-agents-tree replay session.jsonl     # replay a past session (space: pause, +/-: speed)
-agents-tree live --permissions plan  # what Claude may do when you message it: all (default) | accept-edits | plan
-agents-tree live --no-send           # read-only, no message box
+go install github.com/delikesance/agents-tree/cmd/agents-tree@latest
+# or, from a checkout:
+go build -o agents-tree ./cmd/agents-tree
 ```
 
-Optional real-time hooks: add `python3 /path/to/hooks/emit.py` as a `SubagentStart` and
-`SubagentStop` hook command in `~/.claude/settings.json`.
+## Commands
 
-## Chat
+```
+agents-tree live [session.jsonl]    follow a session (default: latest of this project)
+      --pick                        choose the session in the app
+      --permissions all|accept-edits|plan
+                                    what Claude may do when you message it (default: all)
+      --claude-bin PATH             claude executable used to send messages
+      --no-send                     read-only: no message box
+      --no-hooks                    ignore the hook event file
+agents-tree replay <session.jsonl> [--speed N]
+agents-tree sessions                list sessions, newest first
+agents-tree context [session.jsonl] [--recent N]
+                                    where a session's input tokens and money go
+agents-tree hook                    Claude Code hook: reads the payload on stdin, appends an event
+```
 
-The default view is a chat: one box per message (you, Claude, tool calls on one line, delegations to
-subagents and their reports), with a rail of the agents running right now.
-`i`/enter write a message, `esc` back to the chat, `f` filter by agent, `e` unfold long messages,
-`t` agent tree view, `h` show finished agents in the rail, `s` switch session, `ctrl+k` stop Claude, `q` quit.
+Transcripts are read from `~/.claude/projects/<project>/<session>.jsonl`, plus the subagent transcripts in `<session>/subagents/`.
 
-Messages you type are sent through a `claude -p` process that resumes the followed session. By default it runs
-with `--dangerously-skip-permissions` (nothing can ask for confirmation in that mode); use
-`--permissions accept-edits` or `plan` to restrict it. Do not use the same session from an interactive
-`claude` at the same time.
+## Keys
+
+`q` quit, `s` switch session, `i` / `enter` write a message (`enter` sends, `alt+enter` new line, `esc` back to the chat),
+`f` filter by agent, `e` unfold long messages, `t` chat / tree view, `h` finished agents in the rail and tree (live starts on "active"),
+`ctrl+k` stop Claude, `end` follow the bottom, arrows / `pgup` / `pgdown` / `home` scroll, `ctrl+c` quit.
+Replay only: `space` pause, `+` / `-` speed.
+
+## Permissions
+
+Messages are sent with `claude -p --input-format stream-json ... --resume <session>`. The default `--permissions all` passes
+`--dangerously-skip-permissions`: in headless mode nothing can ask for confirmation, so Claude may edit files and run commands without asking
+(the UI shows a warning). `--permissions accept-edits` or `plan` restrict it; anything not allowed is then refused, not asked.
+Do not drive the same session from an interactive `claude` at the same time: agents-tree cannot write into a `claude` that is open elsewhere.
+
+## Hooks (optional)
+
+Hooks give SubagentStart / SubagentStop events without waiting for the transcript. Nothing installs them for you; add them to `~/.claude/settings.json` yourself:
+
+```json
+{
+  "hooks": {
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "agents-tree hook" }] }],
+    "SubagentStop":  [{ "hooks": [{ "type": "command", "command": "agents-tree hook" }] }]
+  }
+}
+```
+
+The command appends one JSON line per event to `$AGENTS_TREE_EVENTS`; `live` reads it for the followed session (`--no-hooks` to ignore). It never prints and always exits 0.
+
+## Environment
+
+- `AGENTS_TREE_STALE`: seconds without an event after which a subagent no longer counts as running (default 120).
+- `AGENTS_TREE_PRICING`: JSON file with extra or overriding rates, e.g. `{"claude-opus-5-5": {"in": 4, "out": 20, "cache_read": 0.2}}` ($ per million tokens).
+- `AGENTS_TREE_EVENTS`: hook event file (default `~/.claude/agents-tree-events.jsonl`).
+
+## Caveats
+
+- Costs are estimates (`~$`) from flat API rates (rates of the Claude API model table of 2026-10-06; no batch, fast or priority pricing). Models without a known rate are excluded and counted, never priced as 0.
+- "Where tokens go" estimates sizes as characters / 4 and splits the input cost in proportion; thinking, images and compaction are not modelled (they land in "other").
+- Test fixtures under `tests/fixtures/` are hand-written, not real captures.
