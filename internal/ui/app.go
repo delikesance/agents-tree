@@ -24,6 +24,7 @@ import (
 )
 
 const (
+	wideMin    = 150 // from this width the chat gets a side panel with the live agent diagram
 	tickEvery  = 250 * time.Millisecond
 	maxMounted = 400 // chat items drawn at once (older ones stay in the store)
 	maxInput   = 6   // rows of the message box before it scrolls
@@ -62,11 +63,12 @@ type cached struct {
 
 // Model is the Bubble Tea model of the whole app.
 type Model struct {
-	opt     Options
-	st      *store.Store
-	pollers []poller
-	rep     *replay.Replay
-	session string // transcript path; empty while a new session has not written anything yet
+	laidStrip int // strip height the chat was last laid out with
+	opt       Options
+	st        *store.Store
+	pollers   []poller
+	rep       *replay.Replay
+	session   string // transcript path; empty while a new session has not written anything yet
 
 	w, h     int
 	view     string // chat | tree
@@ -563,8 +565,21 @@ func (m *Model) runningAgents() []*model.AgentNode {
 	return out
 }
 
+// wide: big terminals show the live agent diagram next to the chat instead of a strip above the message box.
+func (m *Model) wide() bool { return m.w >= wideMin && m.view == "chat" }
+
+func (m *Model) sideW() int { return min(max(m.w*36/100, 56), 84) }
+
+// chatPaneW is the width of the conversation (the whole screen unless the side panel is shown).
+func (m *Model) chatPaneW() int {
+	if m.wide() {
+		return m.w - m.sideW() - 3
+	}
+	return m.w
+}
+
 func (m *Model) stripH() int {
-	if m.view == "chat" && len(m.runningAgents()) > 0 {
+	if m.view == "chat" && !m.wide() && len(m.runningAgents()) > 0 {
 		return 1
 	}
 	return 0
@@ -572,14 +587,15 @@ func (m *Model) stripH() int {
 
 func (m *Model) bodyH() int { return max(m.h-2-m.inputBoxH()-m.stripH(), 3) } // header + status
 
-func (m *Model) textW() int { return min(m.w-2*margin, chatMax) }
+func (m *Model) textW() int { return min(m.chatPaneW()-2*margin, chatMax) }
 
 func (m *Model) layout() {
-	m.chat.SetWidth(m.w)
+	m.laidStrip = m.stripH()
+	m.chat.SetWidth(m.chatPaneW())
 	m.chat.SetHeight(m.bodyH())
 	m.treeVP.SetWidth(m.w)
 	m.treeVP.SetHeight(max(m.bodyH()-11, 3))
-	m.input.SetWidth(max(m.w-6, 10))
+	m.input.SetWidth(max(m.chatPaneW()-6, 10))
 	f := m.follow
 	m.cache = map[string]cached{}
 	m.chatKey = ""
@@ -595,6 +611,9 @@ func (m *Model) passes(msg *model.Message) bool {
 
 // refresh rebuilds what changed: chat content (cached per item) and the tree.
 func (m *Model) refresh() {
+	if m.stripH() != m.laidStrip { // agents started or stopped: the strip appears or goes
+		m.layout()
+	}
 	if m.view == "chat" {
 		m.refreshChat()
 		return
@@ -647,7 +666,7 @@ func (m *Model) refreshChat() {
 		}
 		if i > 0 {
 			sb.WriteString("\n")
-			if !(ce.compact && prevCompact) && !ce.compact {
+			if !(ce.compact && prevCompact) { // air between messages; tool lines of one run stay together
 				sb.WriteString("\n")
 			}
 		}
@@ -722,7 +741,8 @@ func (m *Model) inputBox() string {
 	if m.inputFocus {
 		col = colUser
 	}
-	st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(col).Width(m.w - 2).MaxWidth(m.w)
+	w := m.chatPaneW()
+	st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(col).Width(w - 2).MaxWidth(w)
 	return st.Render(m.input.View())
 }
 
@@ -840,13 +860,21 @@ func (m *Model) Render() string {
 		}
 		body = m.treeVP.View() + "\n" + box(fg(colDim).Render("log"), strings.Join(logs, "\n"), m.w-2, colLine)
 	}
-	lines := []string{m.header(), fitHeight(body, bh)}
+	main := []string{fitHeight(body, bh)}
 	if m.stripH() > 0 {
-		lines = append(lines, m.strip())
+		main = append(main, m.strip())
 	}
 	if m.view == "chat" && m.canSend() {
-		lines = append(lines, m.inputBox())
+		main = append(main, m.inputBox())
 	}
+	block := strings.Join(main, "\n")
+	if m.wide() { // conversation | live agents, the same height down to the status line
+		left := padBlock(fitHeight(block, m.h-2), m.chatPaneW())
+		sep := strings.TrimRight(strings.Repeat(fg(colLine).Render("│")+"\n", m.h-2), "\n")
+		right := indent(m.sidePanel(m.sideW()-2, m.h-2), 1)
+		block = lipgloss.JoinHorizontal(lipgloss.Top, left, " ", sep, " ", right)
+	}
+	lines := []string{m.header(), block}
 	lines = append(lines, m.statusLine())
 	screen := strings.Join(lines, "\n")
 	switch {

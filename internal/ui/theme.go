@@ -26,6 +26,7 @@ var (
 	colLine   = lipgloss.Color("#3a3e47")
 	colCode   = lipgloss.Color("#ffd9a8")
 	colGrey   = lipgloss.Color("#b4bac6")
+	colUserBg = lipgloss.Color("#16202e") // tint behind your messages
 
 	famColor = map[string]color.Color{"opus": colPurple, "sonnet": colOrange, "haiku": colGreen, "": colGrey}
 	famDim   = map[string]color.Color{"opus": lipgloss.Color("#6a5a9a"), "sonnet": lipgloss.Color("#8a5a1a"),

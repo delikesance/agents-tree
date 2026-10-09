@@ -5,7 +5,9 @@ at any time (`s`, or `agents-tree live <session.jsonl>`, or `-c` to continue the
 
 - one quiet column: your messages (blue bar), Claude's replies as plain text, tool calls collapsed into one line per run
   (`⚙ 6 tool calls · Bash ×5 · Write  ✓ 6`; failed and running ones stay visible), hook noise hidden;
-- a strip above the message box listing the subagents working right now, only while there are some;
+- a strip above the message box listing the subagents working right now, only while there are some; on a wide terminal
+  (150 columns or more) the strip becomes a **live side panel**: the agent diagram (who runs which tool, turns, cost,
+  cache hit), the cost, and the latest activity, next to the conversation;
 - delegations to subagents and their reports as small boxes, with the subagents' own activity indented under them;
 - `d` opens the details: agents, cost with prompt-cache accounting, and "where tokens go" (which parts of the context are
   re-sent on every request); `t` shows the agent tree;
