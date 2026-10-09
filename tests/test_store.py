@@ -98,3 +98,36 @@ def test_cli_rejects_missing_transcript(capsys):
     assert main(["live", "/nonexistent.jsonl"]) == 1
     assert main(["replay", "/nonexistent.jsonl"]) == 1
     assert "not found" in capsys.readouterr().err
+
+
+def test_silent_agent_is_not_shown_as_running():
+    from agents_tree.model import TURN
+    from agents_tree.store import STALE_SECS
+    s = Store()
+    s.apply(Event(1000, AGENT_START, "w", MAIN, {"kind": "worker"}))
+    w = s.nodes["w"]
+    assert s.state(w) == "running"
+    assert s.state(w, now=1000 + STALE_SECS + 1) == "stale"       # live clock moved on, no events
+    s.apply(Event(1000 + STALE_SECS + 5, TURN, "w", data={"usage": {"output_tokens": 1}}))
+    assert s.state(w) == "running"                                # activity revives it
+    assert s.running_subagents(now=1000 + 10 * STALE_SECS) == (0, 1)
+    s.apply(Event(1000 + 11 * STALE_SECS, AGENT_END, "w", data={"status": "done"}))
+    assert s.state(w, now=10**10) == "done"                       # finished agents never go stale
+
+
+def test_panels_hidden_until_they_really_happen():
+    import asyncio
+    from agents_tree.ui.app import AgentsTreeApp
+    from agents_tree.sources.replay import Replay
+
+    async def run():
+        app = AgentsTreeApp(replay=Replay([Event(1, AGENT_START, "t", MAIN, {"kind": "worker"})], speed=64))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.5)
+            assert not app.query_one("#left").display            # no advisor/JEV activity: nothing shown
+            from agents_tree.model import ADVISOR
+            app.store.apply(Event(2, ADVISOR, MAIN, data={}))
+            app.refresh_views()
+            assert app.query_one("#left").display and app.query_one("#advisor").display
+            assert not app.query_one("#jev").display
+    asyncio.run(run())

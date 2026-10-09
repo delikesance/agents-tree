@@ -28,7 +28,10 @@ def normalize(p):
 
 def main():
     try:
-        ev = normalize(json.load(sys.stdin))
+        payload = json.load(sys.stdin)
+        ev = normalize(payload)
+        if ev and payload.get("session_id"):
+            ev["session"] = payload["session_id"]
         if ev and ev["kind"] and (ev["agent_id"] if "agent_id" in ev else True):
             with open(PATH, "a", encoding="utf-8") as f:
                 f.write(json.dumps(ev) + "\n")
