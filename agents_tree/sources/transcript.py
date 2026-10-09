@@ -7,9 +7,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
-from ..model import (ADVISOR, AGENT_END, AGENT_START, ALIAS, JEV, MAIN, TURN, Event)
+import re
+
+from ..model import (ADVISOR, AGENT_END, AGENT_START, ALIAS, JEV, MAIN, MESSAGE, MSG_UPDATE,
+                     TURN, Event, Message)
 
 SPAWN_TOOLS = {"Agent", "Task"}
+HIDDEN_TOOLS = {"SubagentHandback"}      # the hand-back is shown as the delegation's report
+MAX_TEXT = 6000
 JEV_PREFIX = "mcp__jev__"
 
 
@@ -30,6 +35,44 @@ def _text(content) -> str:
     return ""
 
 
+_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+_TAG = re.compile(r"</?[a-zA-Z][\w-]*(?:\s[^>]*)?>")
+
+
+def clean_text(text: str) -> str:
+    """Strip injected reminders and markup tags from a prompt, keeping the human text."""
+    text = _REMINDER.sub("", text)
+    cmd = re.search(r"<command-name>\s*(/?[^<\s]+)\s*</command-name>", text)
+    if cmd:
+        args = re.search(r"<command-args>(.*?)</command-args>", text, re.S)
+        return (cmd.group(1) + (" " + args.group(1).strip() if args and args.group(1).strip() else "")).strip()
+    return _TAG.sub("", text).strip()
+
+
+def tool_detail(name: str, inp: dict) -> str:
+    """One short line describing what a tool call does."""
+    def first_line(s: str) -> str:
+        return (s or "").strip().splitlines()[0][:120] if (s or "").strip() else ""
+    if name == "Bash":
+        cmd = (inp.get("command") or "").strip().splitlines()
+        if len(cmd) > 1 and "<<" in cmd[0]:          # heredoc: the first line alone says nothing
+            return f"{cmd[0][:40]} ⏎ {cmd[1].strip()}"[:120]
+        return first_line(inp.get("command", ""))
+    if name in ("Read", "Edit", "Write", "NotebookEdit", "MultiEdit"):
+        parts = (inp.get("file_path") or inp.get("notebook_path") or "").split("/")
+        return "/".join(parts[-3:])
+    if name in ("Grep", "Glob"):
+        return first_line(inp.get("pattern", "")) + (f"  in {inp['path']}" if inp.get("path") else "")
+    if name in ("WebFetch", "WebSearch"):
+        return first_line(inp.get("url") or inp.get("query") or "")
+    if name in SPAWN_TOOLS:
+        return first_line(inp.get("description", ""))
+    for v in inp.values():            # MCP and other tools: first short string argument
+        if isinstance(v, str) and v.strip():
+            return first_line(v)
+    return ""
+
+
 class TranscriptParser:
     """Stateful per-file parser (needs to pair tool_use with its tool_result)."""
 
@@ -37,6 +80,13 @@ class TranscriptParser:
         self.agent_id = agent_id
         self.sidechain = sidechain
         self._pending: dict[str, tuple[str, str]] = {}  # tool_use_id -> (kind, name)
+        self._tool_ts: dict[str, float] = {}            # tool_use_id -> timestamp of the call
+        self._seen_prompt = False                       # sidechain: first user turn = delegated prompt
+        self._n = 0                                     # fallback id counter
+
+    def _id(self, d: dict, suffix: str = "") -> str:
+        self._n += 1
+        return f"{d.get('uuid') or f'{self.agent_id}-{self._n}'}{suffix}"
 
     def parse(self, d: dict) -> Iterator[Event]:
         t = d.get("type")
@@ -45,7 +95,7 @@ class TranscriptParser:
         content = msg.get("content")
         if t == "assistant" and isinstance(content, list):
             yield from self._assistant(d, msg, content, ts)
-        elif t == "user" and isinstance(content, list):
+        elif t == "user" and isinstance(content, (list, str)):
             yield from self._user(d, content, ts)
 
     def _assistant(self, d, msg, content, ts):
@@ -56,15 +106,31 @@ class TranscriptParser:
                 "effort": d.get("perTurnEffort") or d.get("effort") or "",
                 "usage": usage, "sidechain": self.sidechain,
                 "advisor_model": d.get("advisorModel"), "tool": _last_tool(content)})
-        for c in content:
+        model = msg.get("model", "")
+        for i, c in enumerate(content):
+            if c.get("type") == "text" and (c.get("text") or "").strip():
+                yield Event(ts, MESSAGE, self.agent_id, data={"message": Message(
+                    self._id(d, f":{i}"), ts, self.agent_id, "assistant",
+                    c["text"].strip()[:MAX_TEXT], model=model)})
             if c.get("type") not in ("tool_use", "server_tool_use"):
                 continue
             name, tid, inp = c.get("name", ""), c.get("id", ""), c.get("input") or {}
+            self._tool_ts[tid] = ts
             if name in SPAWN_TOOLS:
+                kind = inp.get("subagent_type") or "agent"
                 self._pending[tid] = ("spawn", name)
                 yield Event(ts, AGENT_START, tid, self.agent_id, {
-                    "kind": inp.get("subagent_type") or "agent",
-                    "desc": inp.get("description", ""), "model": inp.get("model", "")})
+                    "kind": kind, "desc": inp.get("description", ""), "model": inp.get("model", "")})
+                yield Event(ts, MESSAGE, self.agent_id, data={"message": Message(
+                    "deleg:" + tid, ts, self.agent_id, "delegation",
+                    (inp.get("prompt") or "").strip()[:MAX_TEXT], kind=kind,
+                    desc=inp.get("description", ""), model=inp.get("model", ""), target=tid)})
+            elif name not in HIDDEN_TOOLS:
+                yield Event(ts, MESSAGE, self.agent_id, data={"message": Message(
+                    tid, ts, self.agent_id, "tool", tool=name.split("__")[-1],
+                    detail=tool_detail(name, inp), status="running")})
+            if name in SPAWN_TOOLS:
+                pass
             elif name == "advisor":
                 self._pending[tid] = ("advisor", name)
                 yield Event(ts, ADVISOR, self.agent_id, data={"model": d.get("advisorModel", "")})
@@ -72,30 +138,67 @@ class TranscriptParser:
                 self._pending[tid] = ("jev", name[len(JEV_PREFIX):])
 
     def _user(self, d, content, ts):
-        for c in content:
-            if c.get("type") != "tool_result":
-                continue
-            kind_name = self._pending.pop(c.get("tool_use_id", ""), None)
-            if not kind_name:
-                continue
-            kind, name = kind_name
-            tid = c["tool_use_id"]
-            if kind == "spawn":
-                res = d.get("toolUseResult")
-                aid = res.get("agentId") if isinstance(res, dict) else None
-                if aid:
-                    yield Event(ts, ALIAS, tid, data={"alias": aid})
-                yield Event(ts, AGENT_END, tid, data={
-                    "status": "failed" if c.get("is_error") else "done"})
-            elif kind == "jev":
-                parsed = _parse_json(_text(c.get("content")))
-                yield Event(ts, JEV, self.agent_id, data={
-                    "decision": name,
-                    "confidence": _num(parsed.get("confidence")),
-                    "escalate": bool(parsed.get("escalate"))})
-            elif kind == "advisor":
-                yield Event(ts, ADVISOR, self.agent_id, data={
-                    "advice": _text(c.get("content")).strip()[:200], "count": False})
+        blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
+        if any(isinstance(c, dict) and c.get("type") == "tool_result" for c in blocks):
+            for c in blocks:
+                if isinstance(c, dict) and c.get("type") == "tool_result":
+                    yield from self._tool_result(d, c, ts)
+            return
+        yield from self._user_message(d, blocks, ts)
+
+    def _user_message(self, d, blocks, ts):
+        if self.sidechain and not self._seen_prompt:
+            self._seen_prompt = True            # the delegated prompt is already shown as the delegation
+            return
+        text = "\n".join(c.get("text", "") for c in blocks if isinstance(c, dict) and c.get("type") == "text")
+        images = sum(1 for c in blocks if isinstance(c, dict) and c.get("type") == "image")
+        cleaned = clean_text(text)
+        if images:
+            cleaned = (cleaned + "  " if cleaned else "") + "▣ " + ("image" if images == 1 else f"{images} images")
+        if not cleaned:
+            return
+        origin = d.get("origin") or {}
+        human = (origin.get("kind") == "human" or d.get("turnOrigin") == "human"
+                 or (not origin and not d.get("isMeta")))
+        role = "user" if human and not d.get("isMeta") else "system"
+        if cleaned.startswith("[Request interrupted"):
+            role = "system"
+        yield Event(ts, MESSAGE, self.agent_id, data={"message": Message(
+            self._id(d), ts, self.agent_id, role, cleaned[:MAX_TEXT])})
+
+    def _tool_result(self, d, c, ts):
+        tid = c.get("tool_use_id", "")
+        started = self._tool_ts.pop(tid, None)
+        duration = round(ts - started, 2) if started and ts >= started else None
+        failed = bool(c.get("is_error"))
+        kind_name = self._pending.pop(tid, None)
+        if kind_name is None or kind_name[0] != "spawn":
+            yield Event(ts, MSG_UPDATE, self.agent_id, data={
+                "id": tid, "status": "error" if failed else "ok", "duration": duration})
+        if not kind_name:
+            return
+        kind, name = kind_name
+        if kind == "spawn":
+            res = d.get("toolUseResult")
+            aid = res.get("agentId") if isinstance(res, dict) else None
+            if aid:
+                yield Event(ts, ALIAS, tid, data={"alias": aid})
+            yield Event(ts, AGENT_END, tid, data={"status": "failed" if failed else "done"})
+            yield Event(ts, MESSAGE, self.agent_id, data={"message": Message(
+                "rep:" + tid, ts, self.agent_id, "report",
+                _text(c.get("content")).split("agentId:")[0].strip()[:MAX_TEXT],
+                status="failed" if failed else "done", duration=duration, target=tid)})
+            yield Event(ts, MSG_UPDATE, self.agent_id, data={
+                "id": "deleg:" + tid, "status": "failed" if failed else "done", "duration": duration})
+        elif kind == "jev":
+            parsed = _parse_json(_text(c.get("content")))
+            yield Event(ts, JEV, self.agent_id, data={
+                "decision": name,
+                "confidence": _num(parsed.get("confidence")),
+                "escalate": bool(parsed.get("escalate"))})
+        elif kind == "advisor":
+            yield Event(ts, ADVISOR, self.agent_id, data={
+                "advice": _text(c.get("content")).strip()[:200], "count": False})
 
 
 def _last_tool(content: list) -> str:

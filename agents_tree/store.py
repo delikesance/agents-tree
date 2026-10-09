@@ -5,8 +5,8 @@ import os
 from dataclasses import dataclass, field
 
 from . import pricing
-from .model import (ADVISOR, AGENT_END, AGENT_START, ALIAS, JEV, LOG, MAIN, TURN,
-                    AdvisorStats, AgentNode, Event, JevStats)
+from .model import (ADVISOR, AGENT_END, AGENT_START, ALIAS, JEV, LOG, MAIN, MESSAGE, MSG_UPDATE, TURN,
+                    AdvisorStats, AgentNode, Event, JevStats, Message)
 
 
 @dataclass
@@ -43,6 +43,7 @@ def _stale_secs() -> float:
 
 
 STALE_SECS = _stale_secs()
+MAX_MESSAGES = 2000
 
 
 class Store:
@@ -52,6 +53,8 @@ class Store:
         self.advisor = AdvisorStats()
         self.jev = JevStats()
         self.log: list[tuple[float, str]] = []
+        self.messages: list[Message] = []
+        self._msg_by_id: dict[str, Message] = {}
         self._alias: dict[str, str] = {}
         self._pending_alias: dict[str, str] = {}  # alias seen before its node exists
         self.nodes[MAIN] = AgentNode(MAIN, "main")
@@ -77,6 +80,7 @@ class Store:
         handler = {
             AGENT_START: self._start, AGENT_END: self._end, ALIAS: self._on_alias,
             TURN: self._turn, ADVISOR: self._advisor, JEV: self._jev, LOG: self._log,
+            MESSAGE: self._message, MSG_UPDATE: self._msg_update,
         }.get(ev.kind)
         if handler:
             handler(ev)
@@ -186,6 +190,26 @@ class Store:
         row[0] += 1
         row[1] += d.get("confidence") or 0.0
         row[2] += 1 if d.get("escalate") else 0
+
+    def _message(self, ev: Event) -> None:
+        m = ev.data["message"]
+        if m.id in self._msg_by_id:          # a re-read of the same line must not duplicate it
+            return
+        self.messages.append(m)
+        self._msg_by_id[m.id] = m
+        if len(self.messages) > MAX_MESSAGES:
+            for old in self.messages[:-MAX_MESSAGES]:
+                self._msg_by_id.pop(old.id, None)
+            del self.messages[:-MAX_MESSAGES]
+
+    def _msg_update(self, ev: Event) -> None:
+        m = self._msg_by_id.get(ev.data.get("id", ""))
+        if m is None:
+            return
+        for k in ("status", "duration"):
+            if ev.data.get(k) is not None:
+                setattr(m, k, ev.data[k])
+        m.rev += 1
 
     def _log(self, ev: Event) -> None:
         self.log.append((ev.ts, ev.data.get("text", "")))
