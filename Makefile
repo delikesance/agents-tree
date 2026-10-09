@@ -18,8 +18,11 @@ build: ## build the binary into bin/agents-tree
 	@mkdir -p $(dir $(BIN))
 	go build -o $(BIN) $(CMD)
 
-run: build ## follow the latest session of the current directory (SESSION=... to pick one, PERMS=... for Claude's rights)
+run: build ## start a NEW session (SESSION=file.jsonl opens that one; PERMS=... sets Claude's rights)
 	$(BIN) live $(SESSION) --permissions $(PERMS)
+
+continue: build ## continue the latest session of this directory
+	$(BIN) live --continue --permissions $(PERMS)
 
 pick: build ## open the app with the session picker (new session or an existing one)
 	$(BIN) live --pick --permissions $(PERMS)

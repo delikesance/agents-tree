@@ -1,13 +1,15 @@
 # agents-tree
 
-Terminal UI for Claude Code sessions. It follows a session transcript live (or replays one) and shows:
+Terminal chat for Claude Code, built to be easy to read. `agents-tree` starts a **new session**; you can open an existing one
+at any time (`s`, or `agents-tree live <session.jsonl>`, or `-c` to continue the latest).
 
-- a chat: one box per message (you, Claude, tool calls, delegations to subagents and their reports);
-- an agent rail: the agents running right now (main, subagents, advisor, JEV forks), each with its current tool;
-- an optional tree view of the agents (`t`);
-- cost with prompt-cache accounting (uncached input, cache writes and reads, output, hit rate, savings);
-- "where tokens go": which parts of the context (system prompt, tool outputs per tool, your messages...) are re-sent on every request;
-- a message box that sends your text to Claude Code through a `claude -p` process resumed on the followed session.
+- one quiet column: your messages (blue bar), Claude's replies as plain text, tool calls collapsed into one line per run
+  (`⚙ 6 tool calls · Bash ×5 · Write  ✓ 6`; failed and running ones stay visible), hook noise hidden;
+- a strip above the message box listing the subagents working right now, only while there are some;
+- delegations to subagents and their reports as small boxes, with the subagents' own activity indented under them;
+- `d` opens the details: agents, cost with prompt-cache accounting, and "where tokens go" (which parts of the context are
+  re-sent on every request); `t` shows the agent tree;
+- the message box sends your text to Claude Code through a `claude -p` process (new or resumed session).
 
 ## Install
 
@@ -21,14 +23,16 @@ go build -o agents-tree ./cmd/agents-tree
 
 ## Makefile
 
-`make` lists the targets: `make run` (build + follow the latest session), `make pick`, `make replay SESSION=file.jsonl`,
+`make` lists the targets: `make run` (build + new session), `make continue`, `make pick`, `make replay SESSION=file.jsonl`,
 `make context`, `make baseline`, `make check` (format + vet + tests). Variables: `SESSION`, `PERMS=all|accept-edits|plan`, `SPEED`.
 
 ## Commands
 
 ```
-agents-tree live [session.jsonl]    follow a session (default: latest of this project)
-      --pick                        choose the session in the app
+agents-tree                         start a NEW session (same as: agents-tree live)
+agents-tree live [session.jsonl]    open that session instead
+      -c, --continue                continue the latest session of this directory
+      --pick                        choose a session (or a new one) in the app
       --permissions all|accept-edits|plan
                                     what Claude may do when you message it (default: all)
       --claude-bin PATH             claude executable used to send messages
@@ -49,14 +53,18 @@ Transcripts are read from `~/.claude/projects/<project>/<session>.jsonl`, plus t
 
 ## Keys
 
-`q` quit, `s` switch session, `i` / `enter` write a message (`enter` sends, `alt+enter` new line, `esc` back to the chat),
-`f` filter by agent, `e` unfold long messages, `t` chat / tree view, `h` finished agents in the rail and tree (live starts on "active"),
-`ctrl+k` stop Claude, `end` follow the bottom, arrows / `pgup` / `pgdown` / `home` scroll, `ctrl+c` quit.
+The message box has the focus from the start: type, `enter` sends, `alt+enter` adds a line. `esc` switches to command mode,
+where letters are shortcuts (`i` or `enter` goes back to the box):
+
+`s` open a session (or a new one) · `n` new session · `d` details (agents, cost, where tokens go; `h` inside: finished agents)
+· `e` unfold long messages, tool calls and hidden system lines · `f` filter by agent · `t` chat / agent tree · `q` quit ·
+`up` / `down` / `home` / `end` scroll.
+Always available: `pgup` / `pgdown` scroll, `ctrl+k` stop Claude, `ctrl+c` stops Claude when it is working, otherwise quits.
 Replay only: `space` pause, `+` / `-` speed.
 
 ## Permissions
 
-Messages are sent with `claude -p --input-format stream-json ... --resume <session>`. The default `--permissions all` passes
+Messages are sent with `claude -p --input-format stream-json ...` (`--session-id` for a new session, `--resume <session>` for an existing one). The default `--permissions all` passes
 `--dangerously-skip-permissions`: in headless mode nothing can ask for confirmation, so Claude may edit files and run commands without asking
 (the UI shows a warning). `--permissions accept-edits` or `plan` restrict it; anything not allowed is then refused, not asked.
 Do not drive the same session from an interactive `claude` at the same time: agents-tree cannot write into a `claude` that is open elsewhere.
