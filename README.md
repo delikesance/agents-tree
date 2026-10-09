@@ -33,7 +33,11 @@ agents-tree replay <session.jsonl> [--speed N]
 agents-tree sessions                list sessions, newest first
 agents-tree context [session.jsonl] [--recent N]
                                     where a session's input tokens and money go
+agents-tree baseline [session.jsonl] [--recent N]
+                                    what the first request contains and what could be cut (read-only)
 agents-tree hook                    Claude Code hook: reads the payload on stdin, appends an event
+agents-tree compress                Claude Code PostToolUse hook: shrinks long tool outputs
+agents-tree hooks install|uninstall|status [--settings PATH] [--apply]
 ```
 
 Transcripts are read from `~/.claude/projects/<project>/<session>.jsonl`, plus the subagent transcripts in `<session>/subagents/`.
@@ -67,11 +71,28 @@ Hooks give SubagentStart / SubagentStop events without waiting for the transcrip
 
 The command appends one JSON line per event to `$AGENTS_TREE_EVENTS`; `live` reads it for the followed session (`--no-hooks` to ignore). It never prints and always exits 0.
 
+## Compressing tool outputs (optional)
+
+`agents-tree hooks install` previews (dry run) the hooks it would add to `~/.claude/settings.json`; with `--apply` it
+backs the file up (`.bak-<timestamp>`) and writes them. It manages two things, and only its own entries:
+
+- `PostToolUse` on `Read|Grep|Glob|WebFetch|WebSearch|mcp__.*` → `agents-tree compress`: strips ANSI codes and
+  repeated lines, and keeps the head and tail of outputs over 6000 bytes (the full text is saved under
+  `~/.claude/agents-tree/tool-outputs/`; errors keep more; `Read` is never truncated). Sizes (never content) are logged to
+  `~/.claude/agents-tree/compress-log.jsonl`. Hooks also run inside subagents.
+- `SubagentStart` / `SubagentStop` → `agents-tree hook`.
+
+For Bash use [RTK](https://github.com/rtk-ai/rtk) (`rtk init -g --auto-patch`); `hooks status` tells you whether it is there.
+Measure first: on one real session tool outputs were ~7% of re-sent input tokens (`agents-tree context`), the context before
+the first message ~22-29% (`agents-tree baseline`). Whether Claude Code accepts `updatedToolOutput` for every tool's output
+shape was not verified; if it does not, the original output is used.
+
 ## Environment
 
 - `AGENTS_TREE_STALE`: seconds without an event after which a subagent no longer counts as running (default 120).
 - `AGENTS_TREE_PRICING`: JSON file with extra or overriding rates, e.g. `{"claude-opus-5-5": {"in": 4, "out": 20, "cache_read": 0.2}}` ($ per million tokens).
 - `AGENTS_TREE_EVENTS`: hook event file (default `~/.claude/agents-tree-events.jsonl`).
+- `AGENTS_TREE_COMPRESS_MIN`, `AGENTS_TREE_OUTPUT_DIR`, `AGENTS_TREE_COMPRESS_LOG`: threshold, saved-output directory and log of `compress`.
 
 ## Caveats
 
