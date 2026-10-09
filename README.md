@@ -19,6 +19,11 @@ go install github.com/delikesance/agents-tree/cmd/agents-tree@latest
 go build -o agents-tree ./cmd/agents-tree
 ```
 
+## Makefile
+
+`make` lists the targets: `make run` (build + follow the latest session), `make pick`, `make replay SESSION=file.jsonl`,
+`make context`, `make baseline`, `make check` (format + vet + tests). Variables: `SESSION`, `PERMS=all|accept-edits|plan`, `SPEED`.
+
 ## Commands
 
 ```
