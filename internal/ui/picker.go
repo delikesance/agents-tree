@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -18,14 +20,15 @@ type picker struct {
 	filter  textinput.Model
 	cursor  int
 	top     int
+	cwd     string // where a new session would start
 }
 
-func newPicker(all []sessions.Info, current string) *picker {
+func newPicker(all []sessions.Info, current, cwd string) *picker {
 	f := textinput.New()
 	f.Placeholder = "filter by project, prompt or id…"
 	f.Prompt = "› "
 	f.Focus()
-	return &picker{all: all, current: current, filter: f}
+	return &picker{all: all, current: current, filter: f, cwd: cwd}
 }
 
 func (p *picker) visible() []sessions.Info {
@@ -43,9 +46,21 @@ func (p *picker) visible() []sessions.Info {
 	return out
 }
 
+// hasNew: the "new session" row is the first one while no filter is typed.
+func (p *picker) hasNew() bool { return strings.TrimSpace(p.filter.Value()) == "" }
+
+func (p *picker) rows() int {
+	n := len(p.visible())
+	if p.hasNew() {
+		n++
+	}
+	return n
+}
+
 type pickResult struct {
-	path   string // chosen session; empty when cancelled
-	closed bool
+	path       string // chosen session; empty when cancelled or a new session was chosen
+	newSession bool
+	closed     bool
 }
 
 // update handles a key; closed is true when the picker should go away.
@@ -56,21 +71,28 @@ func (p *picker) update(msg tea.Msg) (cmd tea.Cmd, res pickResult) {
 		case "esc":
 			return nil, pickResult{closed: true}
 		case "enter":
-			if len(vis) > 0 {
-				return nil, pickResult{path: vis[min(p.cursor, len(vis)-1)].Path, closed: true}
+			idx := p.cursor
+			if p.hasNew() {
+				if idx == 0 {
+					return nil, pickResult{newSession: true, closed: true}
+				}
+				idx--
+			}
+			if len(vis) > 0 && idx < len(vis) {
+				return nil, pickResult{path: vis[idx].Path, closed: true}
 			}
 			return nil, pickResult{}
 		case "up", "ctrl+p":
 			p.cursor = max(0, p.cursor-1)
 			return nil, pickResult{}
 		case "down", "ctrl+n":
-			p.cursor = min(max(len(vis)-1, 0), p.cursor+1)
+			p.cursor = min(max(p.rows()-1, 0), p.cursor+1)
 			return nil, pickResult{}
 		case "pgup":
 			p.cursor = max(0, p.cursor-10)
 			return nil, pickResult{}
 		case "pgdown":
-			p.cursor = min(max(len(vis)-1, 0), p.cursor+10)
+			p.cursor = min(max(p.rows()-1, 0), p.cursor+10)
 			return nil, pickResult{}
 		}
 	}
@@ -98,27 +120,39 @@ func (p *picker) view(width, height int) string {
 	l = append(l, fg(colDim).Render("type to filter · ↑↓ choose · enter open · esc cancel"), p.filter.View(), "")
 	head := fmt.Sprintf("%-10s %-16s %-4s %s", "modified", "project", "sub", "first prompt")
 	l = append(l, fg(colFaint).Bold(true).Render(clip(head, inner)))
-	for i := p.top; i < min(len(vis), p.top+rows); i++ {
-		s := vis[i]
-		mark := "  "
-		if s.Path == p.current {
-			mark = "● "
+	total := p.rows()
+	for i := p.top; i < min(total, p.top+rows); i++ {
+		var line string
+		if p.hasNew() && i == 0 {
+			line = bold(colGreen).Render("+ New session") + fg(colDim).Render(" in "+sessions.Label("", p.cwd))
+		} else {
+			idx := i
+			if p.hasNew() {
+				idx--
+			}
+			s := vis[idx]
+			mark := "  "
+			if s.Path == p.current {
+				mark = "● "
+			}
+			title := s.Title
+			if title == "" {
+				title = "(no prompt)"
+			}
+			line = fmt.Sprintf("%-10s %-16s %-4d %s%s  %s", sessions.Ago(s.MTime), clip(sessions.Label(s.Project, s.CWD), 16),
+				s.Subagents, mark, title, fg(colFaint).Render(s.ID()[:min(8, len(s.ID()))]))
 		}
-		title := s.Title
-		if title == "" {
-			title = "(no prompt)"
-		}
-		line := fmt.Sprintf("%-10s %-16s %-4d %s%s  %s", sessions.Ago(s.MTime), clip(sessions.Label(s.Project, s.CWD), 16),
-			s.Subagents, mark, title, fg(colFaint).Render(s.ID()[:min(8, len(s.ID()))]))
 		line = clip(line, inner)
 		if i == p.cursor {
-			line = lipgloss.NewStyle().Reverse(true).Render(padRight(line, inner))
+			line = lipgloss.NewStyle().Reverse(true).Render(padRight(ansiStrip(line), inner))
 		}
 		l = append(l, line)
 	}
-	if len(vis) == 0 {
+	if len(vis) == 0 && !p.hasNew() {
 		l = append(l, fg(colFaint).Render("no session matches"))
 	}
 	body := strings.Join(l, "\n")
 	return box(bold(colUser).Render("select a session"), body, w, colUser)
 }
+
+func ansiStrip(s string) string { return ansi.Strip(s) }

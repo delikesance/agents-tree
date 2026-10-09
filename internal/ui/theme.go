@@ -20,12 +20,12 @@ var (
 	colPurple = lipgloss.Color("#a98bff")
 	colUser   = lipgloss.Color("#7cb7ff")
 	colRed    = lipgloss.Color("#ff6161")
-	colText   = lipgloss.Color("#d9dce2")
-	colDim    = lipgloss.Color("#8a909c")
-	colFaint  = lipgloss.Color("#5b616c")
-	colLine   = lipgloss.Color("#2a2d33")
+	colText   = lipgloss.Color("#e8eaf0")
+	colDim    = lipgloss.Color("#a3a9b5")
+	colFaint  = lipgloss.Color("#7b818d")
+	colLine   = lipgloss.Color("#3a3e47")
 	colCode   = lipgloss.Color("#ffd9a8")
-	colGrey   = lipgloss.Color("#9aa1ad")
+	colGrey   = lipgloss.Color("#b4bac6")
 
 	famColor = map[string]color.Color{"opus": colPurple, "sonnet": colOrange, "haiku": colGreen, "": colGrey}
 	famDim   = map[string]color.Color{"opus": lipgloss.Color("#6a5a9a"), "sonnet": lipgloss.Color("#8a5a1a"),

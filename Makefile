@@ -6,7 +6,7 @@ SPEED    ?= 4
 CMD      := ./cmd/agents-tree
 
 .DEFAULT_GOAL := help
-.PHONY: help build run pick replay sessions context baseline hooks-status test vet fmt check install clean
+.PHONY: help build run continue pick replay sessions context baseline hooks-status test vet fmt check install clean
 
 help: ## list the targets and their variables
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-14s %s\n", $$1, $$2}'
@@ -21,7 +21,7 @@ build: ## build the binary into bin/agents-tree
 run: build ## follow the latest session of the current directory (SESSION=... to pick one, PERMS=... for Claude's rights)
 	$(BIN) live $(SESSION) --permissions $(PERMS)
 
-pick: build ## open the app with the session picker
+pick: build ## open the app with the session picker (new session or an existing one)
 	$(BIN) live --pick --permissions $(PERMS)
 
 replay: build ## replay a session: make replay SESSION=file.jsonl [SPEED=4]

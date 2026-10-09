@@ -57,7 +57,7 @@ func exec(t *testing.T, args ...string) (code int, out, errOut string) {
 }
 
 func TestUsageAndUnknownCommand(t *testing.T) {
-	for _, args := range [][]string{nil, {"--help"}, {"-h"}, {"help"}} {
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"help"}} { // no arguments starts a new session instead
 		code, out, errOut := exec(t, args...)
 		if code != 2 || out != "" || !strings.Contains(errOut, "agents-tree live") || !strings.Contains(errOut, "--permissions") {
 			t.Errorf("run(%v) = %d, stdout %q, stderr %q", args, code, out, errOut)
@@ -66,6 +66,18 @@ func TestUsageAndUnknownCommand(t *testing.T) {
 	code, _, errOut := exec(t, "frobnicate")
 	if code != 2 || !strings.Contains(errOut, `unknown command "frobnicate"`) || !strings.Contains(errOut, "agents-tree replay") {
 		t.Errorf("unknown command: %d %q", code, errOut)
+	}
+}
+
+func TestLiveContinueWithoutEarlierSessionFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no ~/.claude/projects: nothing to continue
+	code, _, errOut := exec(t, "live", "--continue")
+	if code != 1 || !strings.Contains(errOut, "no earlier session") {
+		t.Errorf("--continue without sessions: %d %q", code, errOut)
+	}
+	code, _, errOut = exec(t, "live", "-c")
+	if code != 1 || !strings.Contains(errOut, "no earlier session") {
+		t.Errorf("-c without sessions: %d %q", code, errOut)
 	}
 }
 

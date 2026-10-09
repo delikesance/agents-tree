@@ -25,14 +25,13 @@ import (
 
 const (
 	tickEvery  = 250 * time.Millisecond
-	railWidth  = 40
-	maxMounted = 400 // chat messages drawn at once (older ones stay in the store)
-	inputRows  = 3
+	maxMounted = 400 // chat items drawn at once (older ones stay in the store)
+	maxInput   = 6   // rows of the message box before it scrolls
 )
 
 // Options configures the app.
 type Options struct {
-	Session     string // transcript path to follow (live) or replay
+	Session     string // transcript path to follow (live) or replay; empty = start a NEW session
 	Replay      bool
 	Speed       float64
 	Hooks       bool
@@ -67,13 +66,14 @@ type Model struct {
 	st      *store.Store
 	pollers []poller
 	rep     *replay.Replay
-	session string
+	session string // transcript path; empty while a new session has not written anything yet
 
 	w, h     int
 	view     string // chat | tree
 	filter   string // "" = everyone, else an agent node id
-	showAll  bool
-	expanded bool
+	showAll  bool   // details/tree: also list finished agents
+	expanded bool   // unfold long messages, tool calls and system lines
+	details  bool   // the details overlay (agents, cost, where tokens go)
 	frame    int
 
 	chat    viewport.Model
@@ -81,6 +81,7 @@ type Model struct {
 	follow  bool
 	cache   map[string]cached
 	chatKey string
+	hidden  int // system messages left out of the chat
 
 	input      textarea.Model
 	inputFocus bool
@@ -96,7 +97,7 @@ type Model struct {
 	compBusy bool
 }
 
-// New builds the model. Replay mode loads the whole session up front.
+// New builds the model. Without a session it starts a NEW one; replay mode loads the session up front.
 func New(opt Options) (*Model, error) {
 	if opt.Permissions == "" {
 		opt.Permissions = "all"
@@ -112,10 +113,10 @@ func New(opt Options) (*Model, error) {
 	m.chat = viewport.New()
 	m.treeVP = viewport.New()
 	m.input = textarea.New()
-	m.input.Placeholder = "Message Claude…   enter: send · alt+enter: new line · esc: back to chat"
+	m.input.Placeholder = "Message Claude…"
 	m.input.ShowLineNumbers = false
-	m.input.Prompt = "│ "
-	m.input.SetHeight(inputRows)
+	m.input.Prompt = "❯ "
+	m.input.SetHeight(1)
 	m.input.SetVirtualCursor(true)
 	m.input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter", "ctrl+j", "shift+enter"))
 	m.input.SetStyles(textarea.DefaultStyles(true))
@@ -123,6 +124,10 @@ func New(opt Options) (*Model, error) {
 		if err := m.load(opt.Session); err != nil {
 			return nil, err
 		}
+	}
+	if m.canSend() {
+		m.inputFocus = true // like a chat: type straight away; esc switches to commands
+		m.input.Focus()
 	}
 	m.layout()
 	return m, nil
@@ -140,27 +145,30 @@ func (m *Model) now() float64 {
 
 func (m *Model) canSend() bool { return m.opt.CanSend && !m.opt.Replay }
 
-// load (re)starts following a session.
+func (m *Model) reset() {
+	m.stopSender()
+	m.st = store.New()
+	m.filter = ""
+	m.comp, m.compFor, m.compBusy = nil, "", false
+	m.pollers, m.rep = nil, nil
+	m.sendErr = ""
+	m.resetChat()
+}
+
+// load (re)starts following an existing session.
 func (m *Model) load(path string) error {
 	if _, err := os.Stat(path); err != nil {
 		return err
 	}
-	m.stopSender()
+	m.reset()
 	m.session = path
-	m.st = store.New()
-	m.filter = ""
-	m.comp, m.compFor, m.compBusy = nil, "", false
-	m.resetChat()
 	if m.opt.Replay {
 		evs, err := transcript.ReadSession(path)
 		if err != nil {
 			return err
 		}
 		sp := m.opt.Speed
-		if m.rep != nil {
-			sp = m.rep.Speed
-		}
-		m.rep, m.pollers = replay.New(evs, sp), nil
+		m.rep = replay.New(evs, sp)
 		return nil
 	}
 	m.pollers = []poller{tail.NewTranscriptTailer(path)}
@@ -178,6 +186,12 @@ func (m *Model) load(path string) error {
 	return nil
 }
 
+// newSession leaves the current session and starts a blank one (created on the first message).
+func (m *Model) newSession() {
+	m.reset()
+	m.session, m.newSessionID = "", ""
+}
+
 func (m *Model) resetChat() {
 	m.cache = map[string]cached{}
 	m.chatKey = ""
@@ -193,13 +207,26 @@ func (m *Model) stopSender() {
 	}
 }
 
-// Init starts the tick loop (and the picker when no session was given).
+// Init starts the tick loop (and the picker with --pick).
 func (m *Model) Init() tea.Cmd {
+	if m.opt.Pick && !m.opt.Replay {
+		m.picker = newPicker(sessions.List(m.opt.ProjectsDir, 200), "", m.cwd())
+	}
 	cmds := []tea.Cmd{tea.Tick(tickEvery, func(t time.Time) tea.Msg { return tickMsg(t) })}
-	if m.session == "" && !m.opt.Replay {
-		m.picker = newPicker(sessions.List(m.opt.ProjectsDir, 200), "")
+	if m.inputFocus {
+		cmds = append(cmds, m.input.Focus())
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m *Model) cwd() string {
+	if m.session != "" {
+		if _, cwd := sessions.Scan(m.session); cwd != "" {
+			return cwd
+		}
+	}
+	d, _ := os.Getwd()
+	return d
 }
 
 // ---- update -----------------------------------------------------------------------------------------------
@@ -270,9 +297,10 @@ func (m *Model) onTick() tea.Cmd {
 	return next
 }
 
-// compositionCmd recomputes "where tokens go" in the background: every 15 s live, once for a replay.
+// compositionCmd recomputes "where tokens go" in the background (only while the details are open):
+// every 15 s live, once for a replay.
 func (m *Model) compositionCmd() tea.Cmd {
-	if m.session == "" || m.compBusy {
+	if m.session == "" || m.compBusy || !m.details {
 		return nil
 	}
 	due := m.compFor != m.session || (!m.opt.Replay && time.Since(m.compAt) > 15*time.Second)
@@ -307,23 +335,61 @@ func (m *Model) quit() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+func (m *Model) busy() bool { return m.snd != nil && m.snd.Busy() }
+
+func (m *Model) scrollChat(k tea.KeyPressMsg) tea.Cmd {
+	var cmd tea.Cmd
+	if m.view == "chat" {
+		m.chat, cmd = m.chat.Update(k)
+		m.follow = m.chat.AtBottom()
+	} else {
+		m.treeVP, cmd = m.treeVP.Update(k)
+	}
+	return cmd
+}
+
 func (m *Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	s := k.String()
-	if s == "ctrl+c" {
-		return m.quit()
-	}
 	if m.picker != nil {
+		if s == "ctrl+c" {
+			return m.quit()
+		}
 		cmd, res := m.picker.update(k)
 		if res.closed {
 			m.picker = nil
-			if res.path != "" {
+			switch {
+			case res.newSession:
+				m.newSession()
+			case res.path != "":
 				if err := m.load(res.path); err != nil {
 					m.sendErr = err.Error()
 				}
-				m.refresh()
 			}
+			m.refresh()
 		}
 		return m, cmd
+	}
+	switch s { // keys that work everywhere
+	case "ctrl+c":
+		if m.busy() {
+			m.interrupt()
+			return m, nil
+		}
+		return m.quit()
+	case "ctrl+k":
+		m.interrupt()
+		return m, nil
+	case "pgup", "pgdown":
+		return m, m.scrollChat(k)
+	}
+	if m.details {
+		switch s {
+		case "d", "esc", "q":
+			m.details = false
+		case "h":
+			m.showAll = !m.showAll
+		}
+		return m, nil
 	}
 	if m.inputFocus {
 		switch s {
@@ -334,28 +400,33 @@ func (m *Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
+			m.fitInput()
 			if text == "" {
 				return m, nil
 			}
 			return m, m.send(text)
-		case "ctrl+k":
-			m.interrupt()
-			return m, nil
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(k)
+		m.fitInput()
 		return m, cmd
 	}
-	switch s {
+	switch s { // command mode
 	case "q":
 		return m.quit()
 	case "s":
-		m.picker = newPicker(sessions.List(m.opt.ProjectsDir, 200), m.session)
+		m.picker = newPicker(sessions.List(m.opt.ProjectsDir, 200), m.session, m.cwd())
+	case "n":
+		if !m.opt.Replay {
+			m.newSession()
+		}
 	case "i", "enter":
 		if m.canSend() && m.view == "chat" {
 			m.inputFocus = true
 			return m, m.input.Focus()
 		}
+	case "d":
+		m.details = true
 	case "f":
 		m.cycleFilter()
 	case "e":
@@ -370,8 +441,6 @@ func (m *Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.layout()
 	case "h":
 		m.showAll = !m.showAll
-	case "ctrl+k":
-		m.interrupt()
 	case " ", "space":
 		if m.rep != nil {
 			m.rep.Paused = !m.rep.Paused
@@ -398,18 +467,20 @@ func (m *Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.treeVP.GotoTop()
 		}
-	case "up", "down", "pgup", "pgdown":
-		var cmd tea.Cmd
-		if m.view == "chat" {
-			m.chat, cmd = m.chat.Update(k)
-			m.follow = m.chat.AtBottom()
-		} else {
-			m.treeVP, cmd = m.treeVP.Update(k)
-		}
-		return m, cmd
+	case "up", "down":
+		return m, m.scrollChat(k)
 	}
 	m.refresh()
 	return m, nil
+}
+
+// fitInput grows the message box with its text (1 to maxInput rows).
+func (m *Model) fitInput() {
+	rows := min(max(m.input.LineCount(), 1), maxInput)
+	if rows != m.input.Height() {
+		m.input.SetHeight(rows)
+		m.layout()
+	}
 }
 
 func (m *Model) cycleFilter() {
@@ -460,6 +531,7 @@ func (m *Model) send(text string) tea.Cmd {
 		return nil
 	}
 	m.sendErr = ""
+	m.follow = true
 	s := m.ensureSender()
 	return func() tea.Msg { return sendDoneMsg{err: s.Send(text)} }
 }
@@ -472,46 +544,42 @@ func (m *Model) interrupt() {
 
 // ---- layout & rendering -----------------------------------------------------------------------------------
 
-func (m *Model) railW() int {
-	if m.w >= 110 {
-		return railWidth
-	}
-	return 0
-}
-
-func (m *Model) centerW() int {
-	if r := m.railW(); r > 0 {
-		return m.w - r - 1
-	}
-	return m.w
-}
-
-func (m *Model) bottomH() int {
+func (m *Model) inputBoxH() int {
 	if m.view == "chat" && m.canSend() {
-		return 1 + inputRows + 2
+		return m.input.Height() + 2
 	}
 	return 0
 }
 
-func (m *Model) bodyH() int {
-	h := m.h - 3 - m.bottomH() // header, status, hints
-	if m.railW() == 0 {
-		h-- // pills bar replaces the rail
+// runningAgents are the subagents working right now (shown as a one-line strip above the message box).
+func (m *Model) runningAgents() []*model.AgentNode {
+	var out []*model.AgentNode
+	now := m.now()
+	for _, id := range m.st.Order {
+		if id != model.Main && m.st.State(m.st.Nodes[id], now) == "running" {
+			out = append(out, m.st.Nodes[id])
+		}
 	}
-	return max(h, 3)
+	return out
 }
+
+func (m *Model) stripH() int {
+	if m.view == "chat" && len(m.runningAgents()) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func (m *Model) bodyH() int { return max(m.h-2-m.inputBoxH()-m.stripH(), 3) } // header + status
+
+func (m *Model) textW() int { return min(m.w-2*margin, chatMax) }
 
 func (m *Model) layout() {
-	cw := m.centerW()
-	m.chat.SetWidth(cw)
+	m.chat.SetWidth(m.w)
 	m.chat.SetHeight(m.bodyH())
-	m.treeVP.SetWidth(cw)
+	m.treeVP.SetWidth(m.w)
 	m.treeVP.SetHeight(max(m.bodyH()-11, 3))
-	m.input.SetWidth(max(cw-4, 10))
-	m.resetChatKeepFollow()
-}
-
-func (m *Model) resetChatKeepFollow() {
+	m.input.SetWidth(max(m.w-6, 10))
 	f := m.follow
 	m.cache = map[string]cached{}
 	m.chatKey = ""
@@ -525,57 +593,72 @@ func (m *Model) passes(msg *model.Message) bool {
 	return m.st.Resolve(msg.AgentID) == m.filter || (msg.Target != "" && m.st.Resolve(msg.Target) == m.filter)
 }
 
-// refresh rebuilds what changed: chat content (cached per message) and the tree.
+// refresh rebuilds what changed: chat content (cached per item) and the tree.
 func (m *Model) refresh() {
 	if m.view == "chat" {
 		m.refreshChat()
-	} else {
-		now := m.now()
-		tv := treeView(m.st, m.centerW()-4, m.frame, now, m.showAll)
-		lines := strings.Split(tv, "\n")
-		wmax := 0
-		for _, l := range lines {
-			wmax = max(wmax, lipgloss.Width(l))
-		}
-		pad := max(0, (m.centerW()-wmax)/2)
-		m.treeVP.SetContent(indent(tv, pad))
+		return
 	}
+	tv := treeView(m.st, m.w-4, m.frame, m.now(), m.showAll)
+	wmax := 0
+	for _, l := range strings.Split(tv, "\n") {
+		wmax = max(wmax, lipgloss.Width(l))
+	}
+	m.treeVP.SetContent(indent(tv, max(0, (m.w-wmax)/2)))
+}
+
+func (m *Model) welcome() string {
+	var l []string
+	where := sessions.Label("", m.cwd())
+	if m.session == "" && !m.opt.Replay {
+		l = append(l, bold(colText).Render("New session")+fg(colDim).Render(" in "+where), "",
+			fg(colDim).Render("Type a message below to start."),
+			fg(colFaint).Render("esc  commands · s  open an existing session · d  details"))
+	} else {
+		l = append(l, fg(colDim).Render("No messages in this session yet."))
+	}
+	return "\n" + indent(strings.Join(l, "\n"), margin+2)
 }
 
 func (m *Model) refreshChat() {
-	now := m.now()
-	c := rctx{st: m.st, now: now, frame: m.frame, expanded: m.expanded, width: max(m.centerW()-2, 20)}
+	c := rctx{st: m.st, now: m.now(), frame: m.frame, expanded: m.expanded, width: m.textW()}
 	var vis []*model.Message
 	for _, msg := range m.st.Messages {
 		if m.passes(msg) {
 			vis = append(vis, msg)
 		}
 	}
-	if len(vis) > maxMounted {
-		vis = vis[len(vis)-maxMounted:]
+	items, hidden := buildFlow(vis, m.expanded)
+	m.hidden = hidden
+	if len(items) > maxMounted {
+		items = items[len(items)-maxMounted:]
 	}
 	var sb strings.Builder
 	prevCompact := true
-	for i, msg := range vis {
-		sig := messageSig(msg, c)
-		ce, ok := m.cache[msg.ID]
+	live := map[string]bool{}
+	for i, it := range items {
+		live[it.id] = true
+		sig := it.sig(c)
+		ce, ok := m.cache[it.id]
 		if !ok || ce.sig != sig {
-			out, compact := renderMessage(msg, c)
+			out, compact := it.render(c)
 			ce = cached{sig, out, compact}
-			m.cache[msg.ID] = ce
-		}
-		if i > 0 && !(ce.compact && prevCompact) {
-			sb.WriteString("\n")
+			m.cache[it.id] = ce
 		}
 		if i > 0 {
 			sb.WriteString("\n")
+			if !(ce.compact && prevCompact) && !ce.compact {
+				sb.WriteString("\n")
+			}
 		}
-		sb.WriteString(ce.out)
+		sb.WriteString(indent(ce.out, margin))
 		prevCompact = ce.compact
 	}
 	content := sb.String()
 	if content == "" {
-		content = fg(colFaint).Render("\n  No messages yet. Press i to write to Claude, s to pick another session.")
+		content = m.welcome()
+	} else {
+		content = "\n" + content // a blank line under the header
 	}
 	key := fmt.Sprintf("%d|%s", len(content), content[max(0, len(content)-200):])
 	if key != m.chatKey {
@@ -585,96 +668,125 @@ func (m *Model) refreshChat() {
 			m.chat.GotoBottom()
 		}
 	}
-	// drop cache entries of messages that left the window
-	if len(m.cache) > len(vis)+64 {
-		keep := map[string]bool{}
-		for _, v := range vis {
-			keep[v.ID] = true
-		}
+	if len(m.cache) > len(items)+64 { // drop entries of items that left the window
 		for id := range m.cache {
-			if !keep[id] {
+			if !live[id] {
 				delete(m.cache, id)
 			}
 		}
 	}
 }
 
-func (m *Model) header() string {
-	l := bold(colText).Render("AGENTS-TREE") + "  " +
-		fg(colPurple).Render("■") + fg(colDim).Render(" opus advisor  ") +
-		fg(colOrange).Render("■") + fg(colDim).Render(" sonnet main/worker  ") +
-		fg(colGreen).Render("■") + fg(colDim).Render(" haiku swarm")
-	if m.session != "" {
-		_, cwd := sessions.Scan(m.session)
-		right := fg(colDim).Render(sessions.Label("", cwd)) + fg(colFaint).Render(" · session "+short(m.sessionID()))
-		if m.opt.Replay {
-			right += "  " + fg(colOrange).Render("replay")
-		} else {
-			right += "  " + fg(colGreen).Render("● live")
-		}
-		gap := m.w - lipgloss.Width(l) - lipgloss.Width(right) - 2
-		if gap > 0 {
-			l += strings.Repeat(" ", gap) + right
-		}
-	}
-	return " " + clip(l, m.w-1)
-}
+func short(s string) string { return s[:min(8, len(s))] }
 
 func (m *Model) sessionID() string { return strings.TrimSuffix(filepath.Base(m.session), ".jsonl") }
 
-func short(s string) string { return s[:min(8, len(s))] }
-
-func (m *Model) rail(h int) string {
-	now := m.now()
-	w := m.railW() - 1
-	parts := []string{railAgents(m.st, now, m.frame, m.showAll, w)}
-	sm := m.st.Summary()
-	if sm.Turns > 0 {
-		parts = append(parts, costPanel(m.st, w))
-		if m.session != "" {
-			parts = append(parts, contextPanel(m.comp, w))
-		}
+// header is one quiet line: where you are, and whether it is live.
+func (m *Model) header() string {
+	l := " " + bold(colText).Render("agents-tree") + fg(colFaint).Render("  ·  ") + fg(colDim).Render(sessions.Label("", m.cwd()))
+	switch {
+	case m.session != "":
+		l += fg(colFaint).Render("  ·  session " + short(m.sessionID()))
+	case m.opt.Replay:
+	default:
+		l += fg(colFaint).Render("  ·  new session")
 	}
-	if m.st.Advisor.Calls > 0 {
-		parts = append(parts, advisorPanel(m.st, w))
+	if m.filter != "" {
+		l += "  " + fg(colOrange).Render("filter: "+m.filterLabel())
 	}
-	if m.st.Jev.Forks > 0 {
-		parts = append(parts, jevPanel(m.st, w))
+	right := fg(colGreen).Render("● live") + " "
+	if m.opt.Replay {
+		right = fg(colOrange).Render("replay") + " "
 	}
-	return fitHeight(strings.Join(parts, "\n"), h)
+	if gap := m.w - lipgloss.Width(l) - lipgloss.Width(right); gap > 0 {
+		l += strings.Repeat(" ", gap) + right
+	}
+	return clip(l, m.w)
 }
 
-// pills is the one-line agent summary used when the terminal is too narrow for the rail.
-func (m *Model) pills() string {
-	now := m.now()
-	var out []string
-	var walk func(id string)
-	walk = func(id string) {
-		n := m.st.Nodes[id]
-		if m.st.State(n, now) == "running" || (m.showAll && id != model.Main) {
-			act := n.Activity
-			if act == "" {
-				act = n.Kind
-			} else {
-				act = n.Kind + " · " + act
-			}
-			col := modelColor(n.Model, false)
-			out = append(out, fg(col).Render("● ")+fg(colText).Render(act))
+// strip shows the agents working right now, one line, only when there are some.
+func (m *Model) strip() string {
+	var parts []string
+	for _, n := range m.runningAgents() {
+		act := n.Kind
+		if n.Activity != "" {
+			act += " · " + n.Activity
 		}
-		for _, c := range m.st.VisibleChildren(id, now, m.showAll) {
-			walk(c)
-		}
+		parts = append(parts, fg(modelColor(n.Model, false)).Render(spin(m.frame))+" "+fg(colText).Render(act))
 	}
-	walk(model.Main)
+	return clip(" "+strings.Join(parts, fg(colFaint).Render("   ")), m.w)
+}
+
+func (m *Model) inputBox() string {
+	col := colLine
+	if m.inputFocus {
+		col = colUser
+	}
+	st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(col).Width(m.w - 2).MaxWidth(m.w)
+	return st.Render(m.input.View())
+}
+
+// statusLine: what matters (state, cost) on the left, the keys that apply now on the right.
+func (m *Model) statusLine() string {
+	var left []string
+	switch {
+	case m.busy():
+		left = append(left, bold(colGreen).Render(spin(m.frame)+" Claude is working…"))
+	case m.snd != nil && m.snd.LastError() != "":
+		left = append(left, bold(colRed).Render("✗ "+m.snd.LastError()))
+	case m.sendErr != "":
+		left = append(left, bold(colRed).Render("✗ "+m.sendErr))
+	case m.rep != nil:
+		s := fmt.Sprintf("replay %d/%d x%g", m.rep.Pos, len(m.rep.Events), m.rep.Speed)
+		if m.rep.Paused {
+			s += " [paused]"
+		}
+		left = append(left, fg(colOrange).Render(s))
+	}
 	sm := m.st.Summary()
-	line := strings.Join(out, fg(colFaint).Render("  "))
 	if sm.Turns > 0 {
-		line += fg(colFaint).Render("   " + usd(sm.Cost.Total()))
+		s := usd(sm.Cost.Total())
 		if hr, ok := sm.HitRate(); ok {
-			line += fg(colFaint).Render(fmt.Sprintf(" · cache %.0f%%", hr*100))
+			s += fmt.Sprintf(" · cache %.0f%%", hr*100)
+		}
+		left = append(left, fg(colDim).Render(s))
+	}
+	if m.canSend() {
+		switch m.opt.Permissions {
+		case "all":
+			left = append(left, fg(colOrange).Render("⚠ all permissions"))
+		case "plan":
+			left = append(left, fg(colDim).Render("plan mode"))
+		default:
+			left = append(left, fg(colDim).Render("accept-edits"))
 		}
 	}
-	return " " + clip(line, m.w-1)
+	if m.hidden > 0 && !m.expanded {
+		left = append(left, fg(colFaint).Render(fmt.Sprintf("%d hidden", m.hidden)))
+	}
+	hint := func(k, d string) string { return bold(colOrange).Render(k) + " " + fg(colDim).Render(d) }
+	var hs []string
+	switch {
+	case m.details:
+		hs = []string{hint("d", "close"), hint("h", "finished agents")}
+	case m.inputFocus:
+		hs = []string{hint("enter", "send"), hint("alt+enter", "new line"), hint("esc", "commands")}
+	default:
+		if m.canSend() {
+			hs = append(hs, hint("i", "write"))
+		}
+		hs = append(hs, hint("d", "details"), hint("s", "sessions"), hint("e", "expand"), hint("f", "filter"), hint("t", "tree"), hint("q", "quit"))
+		if m.rep != nil {
+			hs = append(hs, hint("space", "pause"))
+		}
+	}
+	l := " " + strings.Join(left, fg(colFaint).Render("  ·  "))
+	r := strings.Join(hs, fg(colFaint).Render("  ")) + " "
+	if m.w-lipgloss.Width(l)-lipgloss.Width(r) < 2 {
+		r = clip(r, max(m.w-lipgloss.Width(l)-2, 0))
+	}
+	gap := max(m.w-lipgloss.Width(l)-lipgloss.Width(r), 0)
+	return clip(l+strings.Repeat(" ", gap)+r, m.w)
 }
 
 func fitHeight(s string, h int) string {
@@ -688,126 +800,60 @@ func fitHeight(s string, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *Model) sendStatus() string {
-	var parts []string
-	switch {
-	case m.snd != nil && m.snd.Busy():
-		parts = append(parts, bold(colGreen).Render(spin(m.frame)+" Claude is working…"), fg(colFaint).Render("ctrl+k stops it"))
-	case m.snd != nil && m.snd.LastError() != "":
-		parts = append(parts, bold(colRed).Render("✗ "+m.snd.LastError()))
-	case m.sendErr != "":
-		parts = append(parts, bold(colRed).Render("✗ "+m.sendErr))
-	default:
-		parts = append(parts, fg(colFaint).Render("i / enter: write to Claude"))
-	}
-	switch m.opt.Permissions {
-	case "all":
-		parts = append(parts, fg(colOrange).Render("⚠ all permissions (no confirmations)"))
-	case "plan":
-		parts = append(parts, fg(colFaint).Render("plan mode: read-only"))
-	default:
-		parts = append(parts, fg(colFaint).Render("accept-edits mode"))
-	}
-	return " " + clip(strings.Join(parts, "   "), m.w-1)
-}
-
-func (m *Model) statusLine() string {
+// detailsView is the overlay with everything that is not the conversation: agents, cost, where tokens go.
+func (m *Model) detailsView() string {
+	w := min(m.w-4, 124)
+	left := min(46, w/2)
+	right := w - left - 6
 	now := m.now()
-	run, total := m.st.RunningSubagents(now)
-	sm := m.st.Summary()
-	mode := "live"
-	if m.rep != nil {
-		mode = fmt.Sprintf("replay %d/%d x%g", m.rep.Pos, len(m.rep.Events), m.rep.Speed)
-		if m.rep.Paused {
-			mode += " [paused]"
+	l := railAgents(m.st, now, m.frame, m.showAll, left-4)
+	var r []string
+	if m.st.Summary().Turns > 0 {
+		r = append(r, costPanel(m.st, right))
+		if m.session != "" {
+			r = append(r, contextPanel(m.comp, right))
 		}
-	}
-	mode += " · " + m.view
-	if m.filter != "" {
-		mode += " · filter: " + m.filterLabel()
-	}
-	if m.showAll {
-		mode += " · view: all"
 	} else {
-		mode += " · view: active"
+		r = append(r, fg(colFaint).Render("No usage yet."))
 	}
-	switch {
-	case m.session != "":
-		mode += " · session " + short(m.sessionID())
-	case m.newSessionID != "":
-		mode += " · new session"
-	default:
-		mode += " · no session (press s)"
+	if m.st.Advisor.Calls > 0 {
+		r = append(r, advisorPanel(m.st, right))
 	}
-	line := fmt.Sprintf("%s · subagents [%d/%d running] · advisor [%d] · jev [%d forks] · %s", mode, run, total,
-		m.st.Advisor.Calls, m.st.Jev.Forks, usd(sm.Cost.Total()))
-	if hr, ok := sm.HitRate(); ok {
-		line += fmt.Sprintf(" · cache %.0f%%", hr*100)
+	if m.st.Jev.Forks > 0 {
+		r = append(r, jevPanel(m.st, right))
 	}
-	return fg(colGrey).Render(" " + clip(line, m.w-1))
-}
-
-func (m *Model) hints() string {
-	type h struct{ k, d string }
-	hs := []h{{"q", "quit"}, {"s", "session"}}
-	if m.canSend() {
-		hs = append(hs, h{"i", "write"})
-	}
-	hs = append(hs, h{"f", "filter"}, h{"e", "expand"}, h{"t", "tree"}, h{"h", "history"})
-	if m.canSend() {
-		hs = append(hs, h{"ctrl+k", "stop Claude"})
-	}
-	if m.rep != nil {
-		hs = append(hs, h{"space", "pause"}, h{"+/-", "speed"})
-	}
-	var parts []string
-	for _, x := range hs {
-		parts = append(parts, bold(colOrange).Render(x.k)+" "+fg(colDim).Render(x.d))
-	}
-	line := padRight(clip(" "+strings.Join(parts, "  "), m.w), m.w) // never wrap: one line, whatever the width
-	return lipgloss.NewStyle().Background(lipgloss.Color("#13151a")).Render(line)
-}
-
-func (m *Model) inputBox() string {
-	col := colLine
-	if m.inputFocus {
-		col = colUser
-	}
-	st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(col).Width(m.centerW())
-	return st.Render(m.input.View())
+	body := lipgloss.JoinHorizontal(lipgloss.Top, padBlock(l, left), "  ", strings.Join(r, "\n"))
+	return box(bold(colText).Render("details")+fg(colFaint).Render("  ·  d to close"), fitHeight(body, min(strings.Count(body, "\n")+1, m.h-4)), w, colLine)
 }
 
 // Render returns the whole screen as a string.
 func (m *Model) Render() string {
 	bh := m.bodyH()
-	var center string
+	var body string
 	if m.view == "chat" {
-		center = m.chat.View()
+		body = m.chat.View()
 	} else {
-		logs := ""
+		var logs []string
 		start := max(0, len(m.st.Log)-9)
 		for _, l := range m.st.Log[start:] {
-			logs += fg(colFaint).Render(hhmm(l.TS)+"  ") + fg(colGrey).Render(l.Text) + "\n"
+			logs = append(logs, fg(colFaint).Render(hhmm(l.TS)+"  ")+fg(colGrey).Render(l.Text))
 		}
-		center = m.treeVP.View() + "\n" + box(fg(colDim).Render("log"), strings.TrimRight(logs, "\n"), m.centerW(), colLine)
+		body = m.treeVP.View() + "\n" + box(fg(colDim).Render("log"), strings.Join(logs, "\n"), m.w-2, colLine)
 	}
-	center = fitHeight(center, bh)
-	body := center
-	var lines []string
-	lines = append(lines, m.header())
-	if rw := m.railW(); rw > 0 {
-		body = lipgloss.JoinHorizontal(lipgloss.Top, padBlock(m.rail(bh), rw), center)
-	} else {
-		lines = append(lines, m.pills())
+	lines := []string{m.header(), fitHeight(body, bh)}
+	if m.stripH() > 0 {
+		lines = append(lines, m.strip())
 	}
-	lines = append(lines, body)
 	if m.view == "chat" && m.canSend() {
-		lines = append(lines, m.sendStatus(), m.inputBox())
+		lines = append(lines, m.inputBox())
 	}
-	lines = append(lines, m.statusLine(), m.hints())
+	lines = append(lines, m.statusLine())
 	screen := strings.Join(lines, "\n")
-	if m.picker != nil {
+	switch {
+	case m.picker != nil:
 		screen = overlay(screen, m.picker.view(m.w, m.h), m.w, m.h)
+	case m.details:
+		screen = overlay(screen, m.detailsView(), m.w, m.h)
 	}
 	return screen
 }

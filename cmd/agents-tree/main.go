@@ -19,10 +19,12 @@ import (
 	"github.com/delikesance/agents-tree/internal/ui"
 )
 
-const usage = `agents-tree: visualise Claude Code agents, chat with them, see where tokens go
+const usage = `agents-tree: chat with Claude Code, see its agents, and where tokens go
 
-  agents-tree live [session.jsonl]    follow a session (default: latest of this project)
-        --pick                        choose the session in the app
+  agents-tree                         start a NEW session (same as: agents-tree live)
+  agents-tree live [session.jsonl]    open that session instead
+        -c, --continue                continue the latest session of this directory
+        --pick                        choose a session (or a new one) in the app
         --permissions all|accept-edits|plan
                                       what Claude may do when you message it (default: all)
         --claude-bin PATH             claude executable used to send messages
@@ -35,15 +37,17 @@ const usage = `agents-tree: visualise Claude Code agents, chat with them, see wh
   agents-tree baseline [session.jsonl] [--recent N]
                                       what the first request contains and what could be cut (read-only)
   agents-tree hook                    Claude Code hook: reads the payload on stdin, appends an event
-  agents-tree compress                Claude Code PostToolUse hook: shortens long tool output (same shape)
+  agents-tree compress                Claude Code PostToolUse hook: shrinks long tool outputs
   agents-tree hooks install|uninstall|status [--settings PATH] [--apply]
-                                      manage those hooks in settings.json (dry run unless --apply)
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if len(args) == 0 {
+		return runLive(nil, stderr) // no arguments: a new session
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
@@ -79,7 +83,7 @@ func parse(name string, args []string, setup func(*flag.FlagSet)) (*flag.FlagSet
 	var flags, pos []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if strings.HasPrefix(a, "-") {
+		if strings.HasPrefix(a, "-") && a != "-" {
 			flags = append(flags, a)
 			if !strings.Contains(a, "=") && !isBool(fs, strings.TrimLeft(a, "-")) && i+1 < len(args) {
 				i++
@@ -106,10 +110,12 @@ func isBool(fs *flag.FlagSet, name string) bool {
 }
 
 func runLive(args []string, stderr io.Writer) int {
-	var pick, noSend, noHooks bool
+	var pick, noSend, noHooks, cont bool
 	var perms, bin string
 	fs, ok := parse("live", args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&pick, "pick", false, "")
+		fs.BoolVar(&cont, "continue", false, "")
+		fs.BoolVar(&cont, "c", false, "")
 		fs.BoolVar(&noSend, "no-send", false, "")
 		fs.BoolVar(&noHooks, "no-hooks", false, "")
 		fs.StringVar(&perms, "permissions", "all", "")
@@ -124,12 +130,12 @@ func runLive(args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "--permissions must be all, accept-edits or plan (got %q)\n", perms)
 		return 2
 	}
-	path := fs.Arg(0)
-	if path == "" && !pick {
+	path := fs.Arg(0) // no path: a NEW session (unless --continue or --pick)
+	if path == "" && cont {
 		cwd, _ := os.Getwd()
 		path = sessions.Latest("", cwd)
 		if path == "" {
-			fmt.Fprintln(stderr, "no session transcript found; pass a .jsonl path or use --pick")
+			fmt.Fprintln(stderr, "no earlier session found for this directory; start a new one with `agents-tree`")
 			return 1
 		}
 	}
@@ -139,7 +145,7 @@ func runLive(args []string, stderr io.Writer) int {
 			return 1
 		}
 	}
-	err := ui.Run(ui.Options{Session: path, Hooks: !noHooks, Permissions: perms, ClaudeBin: bin, CanSend: !noSend})
+	err := ui.Run(ui.Options{Session: path, Pick: pick, Hooks: !noHooks, Permissions: perms, ClaudeBin: bin, CanSend: !noSend})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -290,14 +296,18 @@ func runRender(args []string, stdout, stderr io.Writer) int {
 		fs.StringVar(&keys, "keys", "", "")
 	})
 	if !ok || fs.Arg(0) == "" {
-		fmt.Fprintln(stderr, "render needs a session .jsonl")
+		fmt.Fprintln(stderr, "render needs a session .jsonl (or - for a new session)")
 		return 2
+	}
+	path, replay := fs.Arg(0), true
+	if path == "-" {
+		path, replay = "", false
 	}
 	var ks []string
 	if keys != "" {
 		ks = strings.Split(keys, ",")
 	}
-	out, err := ui.Snapshot(ui.Options{Session: fs.Arg(0), Replay: true, CanSend: true, Permissions: "all"}, w, h, ks...)
+	out, err := ui.Snapshot(ui.Options{Session: path, Replay: replay, CanSend: true, Permissions: "all"}, w, h, ks...)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
