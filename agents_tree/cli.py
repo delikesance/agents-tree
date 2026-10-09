@@ -10,6 +10,10 @@ from .sources.transcript import read_session
 from .ui.app import AgentsTreeApp, make_live
 
 
+def send_opts(args) -> dict:
+    return {"permissions": args.permissions, "claude_bin": args.claude_bin, "can_send": not args.no_send}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="agents-tree", description="Visualise Claude Code agents as a tree")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -17,6 +21,10 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("session", nargs="?", help="session .jsonl (default: latest of this project; "
                       "use --pick to choose, or press s in the app)")
     live.add_argument("--pick", action="store_true", help="open the session picker on start")
+    live.add_argument("--permissions", choices=["all", "accept-edits", "plan"], default="all",
+                      help="what Claude may do when you message it from the TUI (default: all, no confirmations)")
+    live.add_argument("--claude-bin", default="claude", help="claude executable used to send messages")
+    live.add_argument("--no-send", action="store_true", help="read-only: hide the message box")
     live.add_argument("--no-hooks", action="store_true", help="ignore the hook event file")
     sub.add_parser("sessions", help="list available sessions")
     rep = sub.add_parser("replay", help="replay a recorded session")
@@ -35,12 +43,12 @@ def main(argv: list[str] | None = None) -> int:
             print("no session transcript found; pass a .jsonl path or use --pick", file=sys.stderr)
             return 1
         if not path:
-            make_live(None, hooks=not args.no_hooks).run()
+            make_live(None, hooks=not args.no_hooks, **send_opts(args)).run()
             return 0
         if not os.path.isfile(path):
             print(f"session transcript not found: {path}", file=sys.stderr)
             return 1
-        make_live(path, hooks=not args.no_hooks).run()
+        make_live(path, hooks=not args.no_hooks, **send_opts(args)).run()
     else:
         if not os.path.isfile(args.session):
             print(f"session transcript not found: {args.session}", file=sys.stderr)

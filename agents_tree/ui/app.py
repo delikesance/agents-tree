@@ -1,37 +1,56 @@
 from __future__ import annotations
 
-from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Footer, Static
-
+import os
 import time
 from pathlib import Path
 
-from ..sources.live import HookTailer, TranscriptTailer, list_sessions
-from ..sources.transcript import read_session
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.widgets import Footer, Input, Static
+
+from ..model import MAIN
+from ..sender import ClaudeSender, find_transcript
+from ..sources.live import HookTailer, TranscriptTailer, list_sessions, scan_session
 from ..sources.replay import Replay
+from ..sources.transcript import read_session
 from ..store import Store
-from .picker import SessionPicker
 from . import render
+from .chat import ChatView
+from .picker import SessionPicker
+from .rail import rail_view
+
+
+class MessageInput(Input):
+    BINDINGS = [("escape", "leave", "Back to chat")]
+
+    def action_leave(self) -> None:
+        self.app.query_one(ChatView).focus()
 
 
 class AgentsTreeApp(App):
     TITLE = "claude code agent tree"
     CSS = """
     #header { height: 1; padding: 0 1; }
-    #left { width: 40; }
-    #treebox { align-horizontal: center; padding: 1 1; overflow-x: auto; }
+    #left { width: 40; padding: 1 0 0 1; }
+    #center { width: 1fr; padding: 0 1; }
+    #chat { height: 1fr; }
+    #treebox { height: 1fr; align-horizontal: center; padding: 1 1; overflow-x: auto; }
     #tree { width: auto; }
     #log { height: 10; border: round $primary-darken-2; padding: 0 1; }
+    #sendstatus { height: 1; padding: 0 1; }
+    #input { height: 3; }
     #status { height: 1; padding: 0 1; }
     """
     BINDINGS = [("q", "quit", "Quit"), ("s", "pick_session", "Session"),
-                ("h", "toggle_history", "History"),
+                ("i,enter", "focus_input", "Write"), ("f", "cycle_filter", "Filter"),
+                ("e", "toggle_expand", "Expand"), ("t", "toggle_tree", "Tree"),
+                ("h", "toggle_history", "History"), ("ctrl+k", "interrupt", "Stop Claude"),
                 ("space", "pause", "Pause"), ("plus,equals_sign", "faster", "Faster"),
                 ("minus", "slower", "Slower")]
 
     def __init__(self, tailers=None, replay: Replay | None = None, refresh_hz: float = 4.0,
-                 session: Path | None = None, hooks: bool = True, projects_dir=None) -> None:
+                 session: Path | None = None, hooks: bool = True, projects_dir=None,
+                 permissions: str = "all", claude_bin: str = "claude", can_send: bool = True) -> None:
         super().__init__()
         self.store = Store()
         self.tailers = tailers or []
@@ -43,21 +62,33 @@ class AgentsTreeApp(App):
         self.projects_dir = projects_dir
         self.replay_mode = replay is not None
         self.show_all = self.replay_mode   # live: only agents running now; replay: everything
+        self.view = "chat"                 # "chat" | "tree"
+        self.filter: str | None = None     # chat filter: None = all, else an agent node id
+        self.permissions, self.claude_bin = permissions, claude_bin
+        self.can_send = can_send and not self.replay_mode
+        self.sender: ClaudeSender | None = None
+        self._new_session_id: str | None = None   # a session we started ourselves, transcript pending
 
     def compose(self) -> ComposeResult:
         yield Static(render.legend(), id="header")
         with Horizontal():
-            with Vertical(id="left"):
+            with VerticalScroll(id="left"):
+                yield Static(id="agents")
                 yield Static(id="cost")
                 yield Static(id="advisor")
                 yield Static(id="jev")
-            yield VerticalScroll(Static(id="tree"), id="treebox")
-        yield Static(id="log")
+            with Vertical(id="center"):
+                yield ChatView(id="chat")
+                yield VerticalScroll(Static(id="tree"), id="treebox")
+                yield Static(id="log")
+                yield Static(id="sendstatus")
+                yield MessageInput(placeholder="Message Claude…  (enter: send · esc: back to chat)", id="input")
         yield Static(id="status")
         yield Footer()
 
     def on_mount(self) -> None:
         self.set_interval(1 / self.refresh_hz, self.tick)
+        self.query_one(ChatView).focus()
         self.tick()
         if self.session is None and not self.replay_mode:
             self.action_pick_session()
@@ -68,11 +99,14 @@ class AgentsTreeApp(App):
         self.push_screen(SessionPicker(sessions, self.session), self.switch_session)
 
     def switch_session(self, path: Path | None) -> None:
-        """Rebuild the tree for another session (live follow, or replay when in replay mode)."""
+        """Rebuild chat and tree for another session (live follow, or replay in replay mode)."""
         if path is None:
             return
+        self._drop_sender()
         self.session = path
         self.store = Store()
+        self.filter = None
+        self.query_one(ChatView).reset()
         if self.replay_mode:
             self.replay = Replay(read_session(path), speed=self.replay.speed if self.replay else 4.0)
         else:
@@ -81,10 +115,93 @@ class AgentsTreeApp(App):
                 self.tailers.append(HookTailer(session_id=path.stem))
         self.refresh_views()
 
+    # -- sending ----------------------------------------------------------
+    def _ensure_sender(self) -> ClaudeSender:
+        if self.sender is None:
+            if self.session is not None:
+                cwd = scan_session(self.session)[1] or os.getcwd()
+                self.sender = ClaudeSender(self.session.stem, cwd, resume=True,
+                                           permissions=self.permissions, claude_bin=self.claude_bin)
+            else:
+                self.sender = ClaudeSender(None, os.getcwd(), resume=False,
+                                           permissions=self.permissions, claude_bin=self.claude_bin)
+                self._new_session_id = self.sender.session_id
+        return self.sender
+
+    def _drop_sender(self) -> None:
+        if self.sender is not None:
+            sender, self.sender = self.sender, None
+            self._new_session_id = None
+            self.run_worker(sender.stop(), exclusive=False)
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != "input":
+            return
+        text = event.value.strip()
+        event.input.value = ""
+        if not text or not self.can_send:
+            return
+        sender = self._ensure_sender()
+        try:
+            await sender.send(text)
+        except (OSError, FileNotFoundError):
+            pass                              # shown through sender.last_error in the status line
+        self.refresh_views()
+
+    def _adopt_new_session(self) -> None:
+        """A session we started: follow its transcript as soon as Claude has written it."""
+        if self._new_session_id and self.session is None:
+            path = find_transcript(self._new_session_id, self.projects_dir)
+            if path:
+                self.session = path
+                self.tailers = [TranscriptTailer(path)]
+                if self.hooks:
+                    self.tailers.append(HookTailer(session_id=path.stem))
+                self._new_session_id = None
+
+    def action_focus_input(self) -> None:
+        if self.can_send and self.view == "chat":
+            self.query_one(MessageInput).focus()
+
+    def action_interrupt(self) -> None:
+        if self.sender is not None:
+            self.run_worker(self.sender.interrupt(), exclusive=False)
+
+    async def action_quit(self) -> None:
+        if self.sender is not None:
+            await self.sender.stop()
+        self.exit()
+
+    # -- views ------------------------------------------------------------
+    def action_cycle_filter(self) -> None:
+        """Chat filter: everyone -> main -> each agent (in order of appearance) -> everyone."""
+        order = [None, MAIN] + [n.id for n in self.store.nodes.values() if n.id != MAIN]
+        i = order.index(self.filter) if self.filter in order else 0
+        self.filter = order[(i + 1) % len(order)]
+        chat = self.query_one(ChatView)
+        chat.filter = self.filter
+        chat.reset()
+        self.refresh_views()
+
+    def action_toggle_expand(self) -> None:
+        chat = self.query_one(ChatView)
+        chat.expanded = not chat.expanded
+        chat.reset()
+        self.refresh_views()
+
+    def action_toggle_tree(self) -> None:
+        self.view = "tree" if self.view == "chat" else "chat"
+        self.refresh_views()
+
+    def action_toggle_history(self) -> None:
+        self.show_all = not self.show_all
+        self.refresh_views()
+
     def tick(self) -> None:
         if self.replay:
             events = self.replay.tick(1 / self.refresh_hz)
         else:
+            self._adopt_new_session()
             events = [e for t in self.tailers for e in t.poll()]
         for ev in events:
             self.store.apply(ev)
@@ -93,33 +210,66 @@ class AgentsTreeApp(App):
     def refresh_views(self) -> None:
         s = self.store
         now = None if self.replay_mode else time.time()   # replays use event time
-        # Only show panels for things that actually happened in this session.
-        adv, jev = self.query_one("#advisor", Static), self.query_one("#jev", Static)
-        cost = self.query_one("#cost", Static)
+        self.frame += 1
+        in_chat = self.view == "chat"
+        chat, treebox, log = self.query_one(ChatView), self.query_one("#treebox"), self.query_one("#log")
+        chat.display, treebox.display, log.display = in_chat, not in_chat, not in_chat
+        # Rail: running agents only (h shows the rest), plus panels for things that really happened.
+        self.query_one("#agents", Static).update(rail_view(s, now, self.frame, self.show_all))
+        adv, jev, cost = (self.query_one(f"#{n}", Static) for n in ("advisor", "jev", "cost"))
         adv.display, jev.display, cost.display = s.advisor.calls > 0, s.jev.forks > 0, s.summary().turns > 0
-        self.query_one("#left").display = adv.display or jev.display or cost.display
         if cost.display:
             cost.update(render.cost_view(s))
         if adv.display:
             adv.update(render.advisor_view(s))
         if jev.display:
             jev.update(render.jev_view(s))
-        width = max(self.size.width - (44 if self.query_one("#left").display else 4), 40)
-        self.frame += 1
-        self.query_one("#tree", Static).update(render.tree_view(s, width, self.frame, now, self.show_all))
-        self.query_one("#log", Static).update(render.log_view(s))
+        if in_chat:
+            chat.sync(s, now, self.frame)
+        else:
+            width = max(self.size.width - 48, 40)
+            self.query_one("#tree", Static).update(render.tree_view(s, width, self.frame, now, self.show_all))
+            log.update(render.log_view(s))
+        self._refresh_input(in_chat)
         if self.replay:
             r = self.replay
             mode = f"replay {r.pos}/{len(r.events)} x{r.speed:g}" + (" [paused]" if r.paused else "")
         else:
             mode = "live"
+        mode += f" · {self.view}" + (f" · filter: {self._filter_label()}" if self.filter else "")
         mode += f" · view: {'all' if self.show_all else 'active'}"
-        mode += f" · session {self.session.stem[:8]}" if self.session else " · no session (press s)"
+        mode += f" · session {self.session.stem[:8]}" if self.session else (
+            " · new session" if self._new_session_id else " · no session (press s)")
         self.query_one("#status", Static).update(render.status_line(s, mode, now))
 
-    def action_toggle_history(self) -> None:
-        self.show_all = not self.show_all
-        self.refresh_views()
+    def _filter_label(self) -> str:
+        node = self.store.get(self.filter) if self.filter else None
+        return "main" if self.filter == MAIN else (node.kind if node else str(self.filter))
+
+    def _refresh_input(self, in_chat: bool) -> None:
+        inp, line = self.query_one(MessageInput), self.query_one("#sendstatus", Static)
+        show = self.can_send and in_chat
+        inp.display = show
+        line.display = show
+        if not show:
+            return
+        from rich.text import Text
+        t = Text()
+        sender = self.sender
+        if sender is not None and sender.busy:
+            t.append(f"{render.SPINNER[self.frame % len(render.SPINNER)]} Claude is working…  ", style="bold green")
+            t.append("ctrl+k stops it", style="grey50")
+        elif sender is not None and sender.last_error:
+            t.append(f"✗ {sender.last_error}", style="bold red")
+        else:
+            t.append("i / enter: write to Claude", style="grey50")
+        if self.permissions == "all":
+            t.append("   ⚠ all permissions (no confirmations)", style="dark_orange")
+        elif self.permissions == "plan":
+            t.append("   plan mode: read-only", style="grey50")
+        else:
+            t.append("   accept-edits mode", style="grey50")
+        line.update(t)
 
     def action_pause(self) -> None:
         if self.replay:
@@ -134,9 +284,9 @@ class AgentsTreeApp(App):
             self.replay.speed = max(self.replay.speed / 2, 0.25)
 
 
-def make_live(session_jsonl=None, hooks: bool = True, projects_dir=None) -> AgentsTreeApp:
-    """Live app; with no session it opens the picker on start."""
-    app = AgentsTreeApp(session=session_jsonl, hooks=hooks, projects_dir=projects_dir)
+def make_live(session_jsonl=None, hooks: bool = True, projects_dir=None, **kw) -> AgentsTreeApp:
+    """Live app; with no session it opens the picker on start. kw: permissions, claude_bin, can_send."""
+    app = AgentsTreeApp(session=session_jsonl, hooks=hooks, projects_dir=projects_dir, **kw)
     if session_jsonl:
         app.tailers = [TranscriptTailer(session_jsonl)]
         if hooks:

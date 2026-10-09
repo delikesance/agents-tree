@@ -117,10 +117,11 @@ def test_panels_hidden_until_they_really_happen():
         app = AgentsTreeApp(replay=Replay([Event(1, AGENT_START, "t", MAIN, {"kind": "worker"})], speed=64))
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause(0.5)
-            assert not app.query_one("#left").display            # no advisor/JEV activity: nothing shown
+            assert app.query_one("#left").display                 # the agent rail is always there
+            assert not app.query_one("#advisor").display          # advisor/JEV only after a call
+            assert not app.query_one("#jev").display
             from agents_tree.model import ADVISOR
             app.store.apply(Event(2, ADVISOR, MAIN, data={}))
             app.refresh_views()
-            assert app.query_one("#left").display and app.query_one("#advisor").display
-            assert not app.query_one("#jev").display
+            assert app.query_one("#advisor").display and not app.query_one("#jev").display
     asyncio.run(run())

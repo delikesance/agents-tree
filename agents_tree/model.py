@@ -13,6 +13,27 @@ TURN = "turn"                # data: model, effort, usage
 ADVISOR = "advisor"          # data: model?, advice?
 JEV = "jev"                  # data: decision, confidence?, escalate?
 LOG = "log"                  # data: text
+MESSAGE = "message"          # data: message (a Message to append to the chat)
+MSG_UPDATE = "msg_update"    # data: id, plus Message fields to change (tool status, duration)
+
+
+@dataclass
+class Message:
+    """One box in the chat. Roles: user | assistant | tool | delegation | report | system."""
+    id: str
+    ts: float
+    agent_id: str                  # who produced it (resolve through Store.get for aliases)
+    role: str
+    text: str = ""
+    tool: str = ""                 # tool name (role == tool)
+    detail: str = ""               # short tool argument: command, path, pattern
+    status: str = ""               # tool: running | ok | error; report: done | failed
+    duration: float | None = None  # seconds, tool_use -> tool_result
+    kind: str = ""                 # delegation/report: subagent type
+    desc: str = ""                 # delegation: short description
+    model: str = ""
+    target: str = ""               # delegation/report: id of the delegated agent node
+    rev: int = 0                   # bumped on every update so views know to re-render
 
 
 @dataclass
