@@ -6,8 +6,13 @@ from .model import (ADVISOR, AGENT_END, AGENT_START, ALIAS, JEV, LOG, MAIN, TURN
                     AdvisorStats, AgentNode, Event, JevStats)
 
 
+# A subagent that announced itself but shows no event for this long is not shown as running.
+STALE_SECS = 180.0
+
+
 class Store:
     def __init__(self) -> None:
+        self.clock = 0.0  # newest event timestamp seen (virtual "now" for replays)
         self.nodes: dict[str, AgentNode] = {}
         self.advisor = AdvisorStats()
         self.jev = JevStats()
@@ -29,6 +34,11 @@ class Store:
 
     # -- reducer --------------------------------------------------------
     def apply(self, ev: Event) -> None:
+        if ev.ts:
+            self.clock = max(self.clock, ev.ts)
+            node = self.get(ev.agent_id)
+            if node and ev.kind in (AGENT_START, TURN, ALIAS):
+                node.last_active = max(node.last_active, ev.ts)
         handler = {
             AGENT_START: self._start, AGENT_END: self._end, ALIAS: self._on_alias,
             TURN: self._turn, ADVISOR: self._advisor, JEV: self._jev, LOG: self._log,
@@ -135,11 +145,23 @@ class Store:
         del self.log[:-500]
 
     # -- derived --------------------------------------------------------
+    def state(self, node: AgentNode, now: float | None = None) -> str:
+        """running | done | failed | stale. Only truly active agents read as running.
+
+        `now` is wall-clock time when following a live session; None uses the newest
+        event time, which is what a replay needs.
+        """
+        if node.id == MAIN or node.status != "running":
+            return node.status
+        ref = self.clock if now is None else now
+        last = node.last_active or node.started
+        return "stale" if last and ref - last > STALE_SECS else "running"
+
     def totals(self) -> tuple[int, int, float]:
         n = self.nodes.values()
         return (sum(x.tokens_in for x in n), sum(x.tokens_out for x in n),
                 sum(x.cost for x in n))
 
-    def running_subagents(self) -> tuple[int, int]:
+    def running_subagents(self, now: float | None = None) -> tuple[int, int]:
         subs = [n for n in self.nodes.values() if n.id != MAIN]
-        return sum(1 for n in subs if n.status == "running"), len(subs)
+        return sum(1 for n in subs if self.state(n, now) == "running"), len(subs)

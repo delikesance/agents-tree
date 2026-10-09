@@ -21,6 +21,10 @@ Cell = tuple[str, str]       # (char, rich style)
 Row = list[Cell]
 
 
+def _age(secs: float) -> str:
+    return f"{int(secs // 3600)}h" if secs >= 3600 else f"{int(secs // 60)}m"
+
+
 def short_model(model: str) -> str:
     fam = pricing.family(model)
     if not fam:
@@ -49,11 +53,12 @@ def _row(text: str, style: str, width: int, align: str = "center") -> Row:
 
 
 # -- agent boxes --------------------------------------------------------
-def node_box(store: Store, node_id: str, frame: int = 0) -> list[Row]:
+def node_box(store: Store, node_id: str, frame: int = 0, now: float | None = None) -> list[Row]:
     n = store.nodes[node_id]
+    state = store.state(n, now)
     fam = pricing.family(n.model)
-    running = n.status == "running"
-    if n.status == "failed":
+    running = state == "running"
+    if state == "failed":
         border = "red"
     else:
         border = FAMILY_COLOR[fam] if running else DIM_COLOR[fam]
@@ -71,11 +76,14 @@ def node_box(store: Store, node_id: str, frame: int = 0) -> list[Row]:
         status, st_style = "main session", "bold"
     elif running:
         status, st_style = f"{SPINNER[frame % len(SPINNER)]} running", "bold green"
-    elif n.status == "failed":
+    elif state == "failed":
         status, st_style = "✗ failed", "bold red"
+    elif state == "stale":
+        idle = max(0, (store.clock if now is None else now) - (n.last_active or n.started))
+        status, st_style = f"◌ no activity {_age(idle)}", "grey50"
     else:
         status, st_style = "✓ done", "grey58"
-    stats = f"{n.turns} turns · {fmt_tokens(n.tokens_in + n.tokens_out)} tok · ${n.cost:.2f}".replace(" tok", "" if n.turns > 99 or n.cost >= 10 else " tok")
+    stats = f"{n.turns} turns · {fmt_tokens(n.tokens_in + n.tokens_out)} tok · ~${n.cost:.2f}".replace(" tok", "" if n.turns > 99 or n.cost >= 10 else " tok")
 
     content = [
         (model, f"bold {border}" if running else border),
@@ -134,16 +142,16 @@ def _bus(width: int, anchors: list[int], parent: int | None, trunk: str | None, 
     if not trunk:
         chars[hi] = "┐" if hi == anchors[-1] and len(anchors) > 1 else chars[hi]
     if parent is not None and not trunk:
-        chars[parent] = "┼" if parent in anchors else "┴"
+        chars[parent] = ("│" if anchors == [parent] else "┼") if parent in anchors else "┴"
     return [(c, style) for c in chars]
 
 
-def subtree(store: Store, node_id: str, max_width: int, frame: int) -> Block:
-    box = node_box(store, node_id, frame)
+def subtree(store: Store, node_id: str, max_width: int, frame: int, now: float | None = None) -> Block:
+    box = node_box(store, node_id, frame, now)
     node = store.nodes[node_id]
     if not node.children:
         return Block(box, BOX_W, BOX_W // 2)
-    kids = [subtree(store, c, max_width, frame) for c in node.children]
+    kids = [subtree(store, c, max_width, frame, now) for c in node.children]
     line = "grey50"
 
     # Group children into rows that fit the available width.
@@ -206,8 +214,8 @@ def _to_text(rows: list[Row]) -> Text:
     return out
 
 
-def tree_view(store: Store, max_width: int = 120, frame: int = 0) -> Text:
-    block = subtree(store, MAIN, max(max_width, BOX_W + 4), frame)
+def tree_view(store: Store, max_width: int = 120, frame: int = 0, now: float | None = None) -> Text:
+    block = subtree(store, MAIN, max(max_width, BOX_W + 4), frame, now)
     return _to_text(block.rows)
 
 
@@ -225,11 +233,12 @@ def legend() -> Text:
 def advisor_view(store: Store) -> Panel:
     a = store.advisor
     t = Text()
-    t.append(f"{short_model(a.model) or 'Advisor'} · on call\n", style="bold medium_purple1")
+    t.append(f"{short_model(a.model) or 'Advisor'}\n", style="bold medium_purple1")
     t.append("calls  ", style="grey50")
-    t.append(f"{a.calls}\n\n", style="bold")
-    t.append("last advice\n", style="grey50")
-    t.append(a.last_advice or "(none captured)", style="grey85" if a.last_advice else "grey42")
+    t.append(f"{a.calls}\n", style="bold")
+    if a.last_advice:
+        t.append("\nlast advice\n", style="grey50")
+        t.append(a.last_advice, style="grey85")
     return Panel(t, title="advisor", border_style="medium_purple1", padding=(0, 1), expand=True)
 
 
@@ -243,21 +252,18 @@ def bar(value: float | None, width: int = 10) -> Text:
     return t
 
 
-JEV_DECISIONS = ["jev_which_file", "jev_which_tool", "jev_retry_or_stop"]
-
-
 def jev_view(store: Store) -> Panel:
     j = store.jev
     t = Text()
     t.append("fork layer   ", style="grey50")
     t.append(f"forks {j.forks}\n\n", style="bold spring_green3")
-    for name in JEV_DECISIONS + sorted(set(j.decisions) - set(JEV_DECISIONS)):
+    for name in sorted(j.decisions):
         conf = j.avg_confidence(name)
         label = name.removeprefix("jev_").replace("_", " ")
         t.append(f"{label:<15}", style="grey70")
         t.append_text(bar(conf))
         t.append(f" {conf:.2f}" if conf is not None else "  n/a", style="grey70" if conf else "grey42")
-        esc = int(j.decisions[name][2]) if name in j.decisions else 0
+        esc = int(j.decisions[name][2])
         if esc:
             t.append(f" ↑{esc}", style="dark_orange")
         t.append("\n")
@@ -274,9 +280,9 @@ def log_view(store: Store, lines: int = 8) -> Text:
     return t
 
 
-def status_line(store: Store, mode: str) -> Text:
-    run, total = store.running_subagents()
+def status_line(store: Store, mode: str, now: float | None = None) -> Text:
+    run, total = store.running_subagents(now)
     t_in, t_out, cost = store.totals()
     return Text(f"{mode} · subagents [{run}/{total} running] · advisor [{store.advisor.calls}]"
-                f" · jev [{store.jev.forks} forks] · {fmt_tokens(t_in + t_out)} tok · ${cost:.2f}",
+                f" · jev [{store.jev.forks} forks] · {fmt_tokens(t_in + t_out)} tok · ~${cost:.2f}",
                 style="grey62")

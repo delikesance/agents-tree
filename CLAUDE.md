@@ -8,6 +8,8 @@ Python/Textual TUI that shows Claude Code agents (main, subagents, advisor, JEV)
 - Data flow: `sources/` (transcript parser, live tailers, replay clock, hook file) -> normalized `Event`s (`model.py`) -> `Store.apply` (`store.py`, pure reducer) -> `ui/render.py` (Rich renderables) -> `ui/app.py` (Textual). Live and replay share the Store; only the source differs.
 - Transcripts: `~/.claude/projects/<proj>/<session>.jsonl`; subagent transcripts are read from `<session>/subagents/agent-<id>.jsonl` (layout verified on a real run), with `agent-<id>.meta.json` giving `toolUseId`. The tool_use id of an `Agent`/`Task` call is the node id; `meta.json` / `toolUseResult.agentId` become aliases (can arrive before the node: `Store._pending_alias`). `Store._claim` is only a fallback heuristic.
 - Hooks (optional): `hooks/emit.py` appends SubagentStart/Stop events to `$AGENTS_TREE_EVENTS` (default `~/.claude/agents-tree-events.jsonl`); wiring them in `settings.json` is manual. Prices in `pricing.py` are estimates (override via `$AGENTS_TREE_PRICING`).
+- Session picker: `s` in the app (or `agents-tree live --pick`, `agents-tree sessions`) lists `~/.claude/projects/*/*.jsonl` (`sources/live.py: list_sessions`, `ui/picker.py`); choosing one resets the Store and re-reads that session. Hook events carry `session` and are filtered per session.
+- Show only what really happened: advisor/JEV panels appear only after a call; a subagent with no event for `STALE_SECS` (180s) is shown as `◌ no activity`, not running (`Store.state`; live uses wall-clock, replay uses event time). Costs are estimates (`~$`).
 - Fixtures in `tests/fixtures/` are hand-written minimal sessions, not real captures.
 
 # Advisor checkpoints
