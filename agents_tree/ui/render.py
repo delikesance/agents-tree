@@ -8,7 +8,7 @@ from rich.text import Text
 
 from .. import pricing
 from ..model import MAIN
-from ..store import Store
+from ..store import Store, hit_rate
 
 FAMILY_COLOR = {"opus": "medium_purple1", "sonnet": "dark_orange", "haiku": "spring_green3", "": "grey62"}
 DIM_COLOR = {"opus": "#6a5a9a", "sonnet": "#8a5a1a", "haiku": "#2f7a56", "": "grey42"}
@@ -88,13 +88,20 @@ def node_box(store: Store, node_id: str, frame: int = 0, now: float | None = Non
         status, st_style = f"◌ no activity {_age(idle)}", "grey50"
     else:
         status, st_style = "✓ done", "grey58"
-    stats = f"{n.turns} turns · {fmt_tokens(n.tokens_in + n.tokens_out)} tok · ~${n.cost:.2f}".replace(" tok", "" if n.turns > 99 or n.cost >= 10 else " tok")
+    price = f"~${n.cost:,.2f}" if n.cost_parts else "$ n/a"
+    if n.unpriced_turns and n.cost_parts:
+        price += "+"   # some turns could not be priced
+    hit = hit_rate(n.fresh, n.cache_write, n.cache_read)
+    stats = f"{n.turns} turns · {price}"
+    cache = (f"cache {hit:.0%} · out {fmt_tokens(n.tokens_out)}" if hit is not None
+             else f"out {fmt_tokens(n.tokens_out)}")
 
     content = [
         (model, f"bold {border}" if running else border),
         (n.desc, "grey62" if running else "grey42"),
         (status, st_style),
         (stats, "grey62" if running else "grey42"),
+        (cache, "grey62" if running else "grey42"),
     ]
     rows = [top]
     for text, style in content:
@@ -291,9 +298,35 @@ def log_view(store: Store, lines: int = 8) -> Text:
     return t
 
 
+def cost_view(store: Store) -> Panel:
+    """Where the money goes: tokens and USD per category, cache hit rate, savings."""
+    s = store.summary()
+    c = s.cost
+    t = Text()
+    rows = [("input (uncached)", s.fresh, c.fresh), ("cache write", s.write, c.write),
+            ("cache read", s.read, c.read), ("output", s.out, c.out)]
+    for label, tokens, usd in rows:
+        t.append(f"{label:<17}", style="grey70")
+        t.append(f"{fmt_tokens(tokens):>7}", style="grey85")
+        t.append(f"{f'~${usd:,.2f}':>10}\n", style="grey62")
+    t.append("─" * 34 + "\n", style="grey30")
+    t.append(f"{'total':<17}", style="bold")
+    t.append(f"{'':>7}{f'~${c.total:,.2f}':>10}\n", style="bold")
+    hit = s.hit_rate
+    t.append("cache hit  ", style="grey50")
+    t.append(f"{hit:.1%}" if hit is not None else "n/a",
+             style="bold spring_green3" if hit and hit >= 0.8 else "bold dark_orange")
+    if c.nocache:
+        t.append(f"\nsaved ~${c.saved:,.2f}", style="spring_green3")
+        t.append(f"  (no cache: ~${c.nocache:,.2f})\n", style="grey50")
+    if s.unpriced_turns:
+        t.append(f"\n{s.unpriced_turns} turns on an unpriced model are excluded", style="dark_orange")
+    return Panel(t, title="cost (estimate)", border_style="grey50", padding=(0, 1), expand=True)
+
+
 def status_line(store: Store, mode: str, now: float | None = None) -> Text:
     run, total = store.running_subagents(now)
-    t_in, t_out, cost = store.totals()
+    s = store.summary()
+    hit = f" · cache {s.hit_rate:.0%}" if s.hit_rate is not None else ""
     return Text(f"{mode} · subagents [{run}/{total} running] · advisor [{store.advisor.calls}]"
-                f" · jev [{store.jev.forks} forks] · {fmt_tokens(t_in + t_out)} tok · ~${cost:.2f}",
-                style="grey62")
+                f" · jev [{store.jev.forks} forks] · ~${s.cost.total:,.2f}{hit}", style="grey62")

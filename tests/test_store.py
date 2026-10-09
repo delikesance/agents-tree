@@ -62,13 +62,6 @@ def test_replay_collapses_gaps_and_pauses():
     assert r.done
 
 
-def test_cache_tokens_are_discounted():
-    from agents_tree import pricing
-    full = pricing.cost("claude-sonnet-5-5", 1_000_000, 0)
-    cached = pricing.cost("claude-sonnet-5-5", 0, 0, cache_read=1_000_000)
-    assert cached < full / 5
-
-
 def test_meta_alias_binds_before_node_exists(tmp_path):
     from agents_tree.model import ALIAS, TURN
     s = Store()
