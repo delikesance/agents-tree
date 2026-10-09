@@ -29,7 +29,7 @@ func suggest(r *Report) []Suggestion {
 		out = append(out, Suggestion{Text: text, TokPerReq: tokPerReq,
 			TokRequests: tokPerReq * float64(r.Requests), Saved: s, WriteOnce: w})
 	}
-	n := r.Recent
+	n := r.Usage.Sessions
 	for _, o := range r.Owners {
 		if o.Name == Unprefixed {
 			continue
@@ -42,7 +42,7 @@ func suggest(r *Report) []Suggestion {
 		if strings.HasPrefix(o.Name, "mcp:") {
 			what = "the MCP server " + strings.TrimPrefix(o.Name, "mcp:")
 		}
-		push(fmt.Sprintf("If you do not use %s (not used in the last %d sessions: no Skill, MCP or Agent call), disabling it would remove ~%s tokens per request (%s) = %s.",
+		push(fmt.Sprintf("If you do not use %s (not used in the last %d sessions scanned: no Skill, MCP or Agent call), disabling it would remove ~%s tokens per request (%s) = %s.",
 			what, n, num(o.Tokens()), parts(o), r.money(o.Tokens())), o.Tokens())
 	}
 	for _, o := range r.Owners {
@@ -57,7 +57,7 @@ func suggest(r *Report) []Suggestion {
 				names = append(names, s.Name)
 			}
 		}
-		push(fmt.Sprintf("%d of the %d unprefixed skills listed were not used in the last %d sessions (largest: %s). If they are your own skills (~/.claude/skills, .claude/skills), removing them would save ~%s tokens per request = %s. Built-in ones cannot be removed.",
+		push(fmt.Sprintf("%d of the %d unprefixed skills listed were not used in the last %d sessions scanned (largest: %s). If they are your own skills (~/.claude/skills, .claude/skills), removing them would save ~%s tokens per request = %s. Built-in ones cannot be removed.",
 			len(o.UnusedSkills), o.Skills, n, strings.Join(names, ", "), num(tok(ch)), r.money(tok(ch))), tok(ch))
 	}
 	for _, rp := range r.Repeats {
@@ -230,8 +230,11 @@ func (r *Report) Write(w io.Writer) {
 			}
 			most = append(most, fmt.Sprintf("%s (%d)", o.Name, o.Uses()))
 		}
-		p("\ncost tokens in the baseline but not used in the last %d sessions (candidates to disable, if you do not need them):\n  %s\n", r.Recent, orNone(unused))
+		p("\ncost tokens in the baseline but not used in the last %d sessions scanned (candidates to disable, if you do not need them):\n  %s\n", r.Usage.Sessions, orNone(unused))
 		p("most used: %s\n", orNone(most))
+	}
+	if r.Usage.Sessions < r.Recent {
+		p("note: only %d session(s) found, fewer than the %d asked for: 'not used' is weak evidence with so little history.\n", r.Usage.Sessions, r.Recent)
 	}
 	if len(r.Usage.Skill)+len(r.Usage.MCP)+len(r.Usage.Agent) > 0 {
 		p("calls seen: skills %s | mcp %s | agents %s\n", top(r.Usage.Skill), top(r.Usage.MCP), top(r.Usage.Agent))
@@ -269,7 +272,7 @@ func (r *Report) Write(w io.Writer) {
 	if r.UnusedTokensTotal > 0 {
 		p("\ntotal of the unused groups above: ~%s tokens per request = %s.\n", num(r.UnusedTokensTotal), r.money(r.UnusedTokensTotal))
 	}
-	p("The saving counts cache-read cost for the requests of this session; the first request of a new session pays the cache write once. Estimates only; the main session only (subagent baselines come on top).\n")
+	p("The saving counts cache-read cost for the requests of this session; the first request of a new session pays the cache write once. Estimates only; the main session only (subagent baselines come on top). MCP servers injected by your environment (e.g. a cloud session's own tools) may not be removable from your settings.\n")
 }
 
 func orNone(s []string) string {

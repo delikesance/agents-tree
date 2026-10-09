@@ -33,7 +33,7 @@ func TestCostPanelShowsTheSplitCacheHitRateAndSavings(t *testing.T) {
 	}
 	out := flat(costPanel(s, 70))
 	for _, want := range []string{"cost (estimate)", "input (uncached)", "cache write", "cache read", "output", "total",
-		fmt.Sprintf("cache hit %.1f%%", hr*100), "saved " + usd(sm.Cost.Saved()), "(no cache " + usd(sm.Cost.NoCache) + ")",
+		fmt.Sprintf("cache hit %.1f%%", hr*100), "saved " + usd(sm.Cost.Saved()), "without cache " + usd(sm.Cost.NoCache),
 		usd(sm.Cost.Total()), fmtTokens(sm.Read), fmtTokens(sm.Out)} {
 		if !strings.Contains(out, want) {
 			t.Errorf("cost panel lacks %q:\n%s", want, out)

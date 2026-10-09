@@ -213,9 +213,15 @@ func leaves(v any, out *[]string) {
 	}
 }
 
+// bookkeeping attachment types carry ids/flags, not text that is sent to the model.
+var bookkeeping = map[string]bool{"deferred_tools_record": true, "command_permissions": true, "credential_org": true}
+
 // attText is the text an attachment adds to the context (best effort, by known type, else every string).
 func attText(typ string, a obj) string {
 	var parts []string
+	if bookkeeping[typ] {
+		return ""
+	}
 	switch typ {
 	case "skill_listing":
 		if s := str(a, "content"); s != "" {

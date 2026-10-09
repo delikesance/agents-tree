@@ -170,8 +170,8 @@ func box(title string, body string, width int, border color.Color) string {
 	b := fg(border)
 	var top string
 	if title != "" {
-		t := clip(title, width-6)
-		top = b.Render("╭─") + " " + t + " " + b.Render(strings.Repeat("─", max(0, width-6-lipgloss.Width(t)))+"╮")
+		t := clip(title, width-5)
+		top = b.Render("╭─") + " " + t + " " + b.Render(strings.Repeat("─", max(0, width-5-lipgloss.Width(t)))+"╮")
 	} else {
 		top = b.Render("╭" + strings.Repeat("─", width-2) + "╮")
 	}

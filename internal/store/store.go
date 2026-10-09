@@ -264,6 +264,7 @@ func (s *Store) jev(ev model.Event) {
 	row.Count++
 	if ev.Confidence != nil {
 		row.ConfidenceSum += *ev.Confidence
+		row.ConfCount++
 	}
 	if ev.Escalate {
 		row.Escalated++

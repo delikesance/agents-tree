@@ -107,6 +107,7 @@ type AdvisorStats struct {
 type JevRow struct {
 	Count         int
 	ConfidenceSum float64
+	ConfCount     int // decisions that reported a confidence (the average ignores the others)
 	Escalated     int
 }
 
@@ -121,5 +122,8 @@ func (j *JevStats) AvgConfidence(decision string) (float64, bool) {
 	if !ok || r.Count == 0 {
 		return 0, false
 	}
-	return r.ConfidenceSum / float64(r.Count), true
+	if r.ConfCount == 0 {
+		return 0, false
+	}
+	return r.ConfidenceSum / float64(r.ConfCount), true
 }

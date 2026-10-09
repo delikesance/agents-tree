@@ -62,10 +62,10 @@ func TestTreeShowsEveryKindWithConnectorsAndNoLineTooWide(t *testing.T) {
 
 func TestTreeWrapsChildrenIntoRowsWhenTheyDoNotFit(t *testing.T) {
 	s := sevenChildren()
-	wide := strip(treeView(s, 196, 0, 1030, true))
+	wide := strip(treeView(s, 400, 0, 1030, true))
 	narrow := strip(treeView(s, 70, 0, 1030, true))
-	if strings.ContainsAny(wide, "└├") && !strings.Contains(wide, "┌") {
-		t.Errorf("wide tree wraps with a trunk:\n%s", wide)
+	if strings.Contains(wide, "└") || !strings.Contains(wide, "┌") || !strings.Contains(wide, "┐") {
+		t.Errorf("seven boxes fit on one row at 400 columns: one bus line, no trunk:\n%s", wide)
 	}
 	// seven 32-wide boxes do not fit in 70 columns: they stack under a vertical trunk
 	for _, c := range []string{"┌", "├", "└"} {
