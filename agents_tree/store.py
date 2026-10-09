@@ -1,13 +1,22 @@
 """Pure state reducer: Events in, agent tree + stats out. No UI, no I/O."""
 from __future__ import annotations
 
+import os
+
 from . import pricing
 from .model import (ADVISOR, AGENT_END, AGENT_START, ALIAS, JEV, LOG, MAIN, TURN,
                     AdvisorStats, AgentNode, Event, JevStats)
 
 
 # A subagent that announced itself but shows no event for this long is not shown as running.
-STALE_SECS = 180.0
+def _stale_secs() -> float:
+    try:
+        return float(os.environ.get("AGENTS_TREE_STALE", 120))
+    except ValueError:
+        return 120.0
+
+
+STALE_SECS = _stale_secs()
 
 
 class Store:
@@ -117,6 +126,7 @@ class Store:
         node.turns += 1
         node.tokens_in += t_in
         node.tokens_out += t_out
+        node.activity = d.get("tool", "")
         node.model = d.get("model") or node.model
         node.effort = d.get("effort") or node.effort
         node.cost += pricing.cost(node.model, fresh, t_out, c_write, c_read)
@@ -151,11 +161,21 @@ class Store:
         `now` is wall-clock time when following a live session; None uses the newest
         event time, which is what a replay needs.
         """
-        if node.id == MAIN or node.status != "running":
+        if node.status != "running":
             return node.status
         ref = self.clock if now is None else now
         last = node.last_active or node.started
         return "stale" if last and ref - last > STALE_SECS else "running"
+
+    def _alive(self, node_id: str, now: float | None) -> bool:
+        node = self.nodes[node_id]
+        return self.state(node, now) == "running" or any(self._alive(c, now) for c in node.children)
+
+    def visible_children(self, node_id: str, now: float | None = None, show_all: bool = False) -> list[str]:
+        """Children to draw: all of them, or only agents actually running (plus the
+        ancestors needed to keep a running agent connected to the tree)."""
+        kids = self.nodes[node_id].children
+        return list(kids) if show_all else [c for c in kids if self._alive(c, now)]
 
     def totals(self) -> tuple[int, int, float]:
         n = self.nodes.values()
