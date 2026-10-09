@@ -13,9 +13,12 @@ from . import render
 class AgentsTreeApp(App):
     TITLE = "claude code agent tree"
     CSS = """
-    #left { width: 38; }
+    #header { height: 1; padding: 0 1; }
+    #left { width: 40; }
+    #treebox { align-horizontal: center; padding: 1 1; overflow-x: auto; }
+    #tree { width: auto; }
     #log { height: 10; border: round $primary-darken-2; padding: 0 1; }
-    #status { height: 1; }
+    #status { height: 1; padding: 0 1; }
     """
     BINDINGS = [("q", "quit", "Quit"), ("space", "pause", "Pause (replay)"),
                 ("plus,equals_sign", "faster", "Faster"), ("minus", "slower", "Slower")]
@@ -26,13 +29,15 @@ class AgentsTreeApp(App):
         self.tailers = tailers or []
         self.replay = replay
         self.refresh_hz = refresh_hz
+        self.frame = 0
 
     def compose(self) -> ComposeResult:
+        yield Static(render.legend(), id="header")
         with Horizontal():
             with Vertical(id="left"):
                 yield Static(id="advisor")
                 yield Static(id="jev")
-            yield VerticalScroll(Static(id="tree"))
+            yield VerticalScroll(Static(id="tree"), id="treebox")
         yield Static(id="log")
         yield Static(id="status")
         yield Footer()
@@ -54,7 +59,9 @@ class AgentsTreeApp(App):
         s = self.store
         self.query_one("#advisor", Static).update(render.advisor_view(s))
         self.query_one("#jev", Static).update(render.jev_view(s))
-        self.query_one("#tree", Static).update(render.tree_view(s))
+        width = max(self.size.width - 44, 40)
+        self.frame += 1
+        self.query_one("#tree", Static).update(render.tree_view(s, width, self.frame))
         self.query_one("#log", Static).update(render.log_view(s))
         if self.replay:
             r = self.replay

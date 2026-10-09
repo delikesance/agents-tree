@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import time
 
-from rich.columns import Columns
-from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
@@ -12,9 +10,15 @@ from .. import pricing
 from ..model import MAIN
 from ..store import Store
 
-FAMILY_COLOR = {"opus": "medium_purple1", "sonnet": "orange3", "haiku": "spring_green3", "": "grey62"}
-STATUS_STYLE = {"running": ("▶ running", "green"), "done": ("✓ done", "grey62"), "failed": ("✗ failed", "red")}
+FAMILY_COLOR = {"opus": "medium_purple1", "sonnet": "dark_orange", "haiku": "spring_green3", "": "grey62"}
+DIM_COLOR = {"opus": "#6a5a9a", "sonnet": "#8a5a1a", "haiku": "#2f7a56", "": "grey42"}
 EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"]
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+BOX_W = 32
+GAP = 2
+
+Cell = tuple[str, str]       # (char, rich style)
+Row = list[Cell]
 
 
 def short_model(model: str) -> str:
@@ -26,89 +30,247 @@ def short_model(model: str) -> str:
     return f"{fam.capitalize()} {ver}".strip()
 
 
-def effort_bar(effort: str) -> Text:
-    t = Text("effort ", style="grey50")
-    n = EFFORT_LEVELS.index(effort) + 1 if effort in EFFORT_LEVELS else 0
-    t.append("█" * n, style="orange3")
-    t.append("░" * (len(EFFORT_LEVELS) - n), style="grey30")
-    t.append(f" {effort or '-'}")
-    return t
-
-
 def fmt_tokens(n: int) -> str:
-    return f"{n/1000:.0f}k" if n >= 10_000 else (f"{n/1000:.1f}k" if n >= 1000 else str(n))
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    return f"{n / 1000:.0f}k" if n >= 10_000 else (f"{n / 1000:.1f}k" if n >= 1000 else str(n))
 
 
-def node_panel(store: Store, node_id: str) -> Panel:
+def _fit(s: str, width: int) -> str:
+    return s if len(s) <= width else s[: width - 1] + "…"
+
+
+def _row(text: str, style: str, width: int, align: str = "center") -> Row:
+    text = _fit(text, width)
+    pad = width - len(text)
+    left = pad // 2 if align == "center" else 0
+    return ([(" ", style)] * left + [(c, style) for c in text]
+            + [(" ", style)] * (pad - left))
+
+
+# -- agent boxes --------------------------------------------------------
+def node_box(store: Store, node_id: str, frame: int = 0) -> list[Row]:
     n = store.nodes[node_id]
-    color = FAMILY_COLOR[pricing.family(n.model)]
-    label, style = STATUS_STYLE[n.status] if n.id != MAIN else ("main session", "bold")
-    body = Text(justify="center")
-    body.append(short_model(n.model) or "model n/a", style=color)
+    fam = pricing.family(n.model)
+    running = n.status == "running"
+    if n.status == "failed":
+        border = "red"
+    else:
+        border = FAMILY_COLOR[fam] if running else DIM_COLOR[fam]
+    text_style = "" if running else "grey58"
+    inner = BOX_W - 4
+
+    title = f" {n.kind} "
+    top = [("╭", border)] + [("─", border)] * 1 + [(c, f"bold {border}") for c in _fit(title, BOX_W - 5)]
+    top += [("─", border)] * (BOX_W - 1 - len(top)) + [("╮", border)]
+
+    model = short_model(n.model) or "model n/a"
     if n.effort:
-        body.append(f" · {n.effort}", style="grey62")
-    body.append("\n")
-    if n.desc:
-        body.append(n.desc[:40] + "\n", style="grey50")
-    body.append(label, style=style)
-    body.append(f"\n{n.turns} turns · {fmt_tokens(n.tokens_in + n.tokens_out)} tok · ${n.cost:.2f}", style="grey50")
-    return Panel(body, title=Text(n.kind, style="bold"), border_style=color, padding=(0, 1), width=34)
+        model += f" · {n.effort}"
+    if node_id == MAIN:
+        status, st_style = "main session", "bold"
+    elif running:
+        status, st_style = f"{SPINNER[frame % len(SPINNER)]} running", "bold green"
+    elif n.status == "failed":
+        status, st_style = "✗ failed", "bold red"
+    else:
+        status, st_style = "✓ done", "grey58"
+    stats = f"{n.turns} turns · {fmt_tokens(n.tokens_in + n.tokens_out)} tok · ${n.cost:.2f}".replace(" tok", "" if n.turns > 99 or n.cost >= 10 else " tok")
+
+    content = [
+        (model, f"bold {border}" if running else border),
+        (n.desc, "grey62" if running else "grey42"),
+        (status, st_style),
+        (stats, "grey62" if running else "grey42"),
+    ]
+    rows = [top]
+    for text, style in content:
+        rows.append([("│", border), (" ", "")] + _row(text, style or text_style, inner)
+                    + [(" ", ""), ("│", border)])
+    rows.append([("╰", border)] + [("─", border)] * (BOX_W - 2) + [("╯", border)])
+    return rows
 
 
-def tree_view(store: Store, node_id: str = MAIN) -> Group:
-    n = store.nodes[node_id]
-    parts = [node_panel(store, node_id)]
-    if n.children:
-        parts.append(Text("│" if len(n.children) == 1 else "┌" + "─" * 10 + "┴" + "─" * 10 + "┐", style="grey50", justify="center"))
-        kids = [tree_view(store, c) for c in n.children]
-        parts.append(Columns(kids, align="center", expand=True))
-    return Group(*parts)
+# -- tree layout --------------------------------------------------------
+class Block:
+    """A rendered subtree: rows of cells, its width, and the column of its top anchor."""
+
+    def __init__(self, rows: list[Row], width: int, anchor: int) -> None:
+        self.rows, self.width, self.anchor = rows, width, anchor
+
+
+def _pad(row: Row, width: int) -> Row:
+    return row + [(" ", "")] * (width - len(row))
+
+
+def _hjoin(blocks: list[Block]) -> tuple[list[Row], list[int], int]:
+    """Place blocks side by side; return rows, anchor columns, total width."""
+    height = max(len(b.rows) for b in blocks)
+    rows: list[Row] = [[] for _ in range(height)]
+    anchors, x = [], 0
+    for i, b in enumerate(blocks):
+        for r in range(height):
+            line = b.rows[r] if r < len(b.rows) else []
+            rows[r] += _pad(line, b.width) + ([(" ", "")] * GAP if i < len(blocks) - 1 else [])
+        anchors.append(x + b.anchor)
+        x += b.width + GAP
+    return rows, anchors, x - GAP
+
+
+def _bus(width: int, anchors: list[int], parent: int | None, trunk: str | None, style: str) -> Row:
+    """Horizontal connector line above a row of children."""
+    chars = [" "] * width
+    lo, hi = min(anchors + ([parent] if parent is not None else [])), max(anchors)
+    if trunk:
+        lo = 0
+    for x in range(lo, hi + 1):
+        chars[x] = "─"
+    for a in anchors:
+        chars[a] = "┬"
+    if trunk:
+        chars[0] = trunk
+    elif lo == anchors[0]:
+        chars[lo] = "┌" if anchors[0] != parent else "├"
+    if not trunk:
+        chars[hi] = "┐" if hi == anchors[-1] and len(anchors) > 1 else chars[hi]
+    if parent is not None and not trunk:
+        chars[parent] = "┼" if parent in anchors else "┴"
+    return [(c, style) for c in chars]
+
+
+def subtree(store: Store, node_id: str, max_width: int, frame: int) -> Block:
+    box = node_box(store, node_id, frame)
+    node = store.nodes[node_id]
+    if not node.children:
+        return Block(box, BOX_W, BOX_W // 2)
+    kids = [subtree(store, c, max_width, frame) for c in node.children]
+    line = "grey50"
+
+    # Group children into rows that fit the available width.
+    groups: list[list[Block]] = [[]]
+    used = 0
+    for k in kids:
+        if groups[-1] and used + GAP + k.width > max_width - 4:
+            groups.append([])
+            used = 0
+        used += (GAP if groups[-1] else 0) + k.width
+        groups[-1].append(k)
+    wrapped = len(groups) > 1
+    indent = 2 if wrapped else 0
+
+    laid = [_hjoin(g) for g in groups]
+    width = max(w for _, _, w in laid) + indent
+    rows: list[Row] = []
+    first_anchors = None
+    for gi, (grows, anchors, gw) in enumerate(laid):
+        shift = indent + (0 if wrapped else (width - gw) // 2)
+        anchors = [a + shift for a in anchors]
+        if gi == 0:
+            first_anchors = anchors
+            parent = (anchors[0] + anchors[-1]) // 2
+        trunk = None
+        if wrapped:
+            trunk = "┌" if gi == 0 else ("└" if gi == len(laid) - 1 else "├")
+        rows.append(_bus(width, anchors, parent if gi == 0 else None, trunk, line))
+        for r in grows:
+            row = [(" ", "")] * shift + r
+            if wrapped and gi < len(laid) - 1:
+                row[0] = ("│", line)
+            rows.append(_pad(row, width))
+        if wrapped and gi < len(laid) - 1:
+            pass
+    parent_col = parent if not wrapped else (first_anchors[0] + first_anchors[-1]) // 2
+
+    # Parent box centred over its children, with a stem down to the bus line.
+    pw = max(width, BOX_W)
+    off = max(0, min(pw - BOX_W, parent_col - BOX_W // 2))
+    head = [([(" ", "")] * off + r) for r in box]
+    stem = [(" ", "")] * parent_col + [("│", line)]
+    return Block([_pad(r, pw) for r in head + [stem] + rows], pw, off + BOX_W // 2)
+
+
+def _to_text(rows: list[Row]) -> Text:
+    out = Text(no_wrap=True, overflow="crop")
+    for i, row in enumerate(rows):
+        run, style = "", None
+        for ch, st in row:
+            if st != style and run:
+                out.append(run, style=style or "")
+                run = ""
+            style = st
+            run += ch
+        if run:
+            out.append(run, style=style or "")
+        if i < len(rows) - 1:
+            out.append("\n")
+    return out
+
+
+def tree_view(store: Store, max_width: int = 120, frame: int = 0) -> Text:
+    block = subtree(store, MAIN, max(max_width, BOX_W + 4), frame)
+    return _to_text(block.rows)
+
+
+# -- side panels --------------------------------------------------------
+def legend() -> Text:
+    t = Text()
+    t.append("CLAUDE CODE AGENT TREE", style="bold")
+    for color, label in [("medium_purple1", "opus · advisor"), ("dark_orange", "sonnet · main/worker"),
+                         ("spring_green3", "haiku · swarm / jev")]:
+        t.append("   ■ ", style=color)
+        t.append(label, style="grey62")
+    return t
 
 
 def advisor_view(store: Store) -> Panel:
     a = store.advisor
     t = Text()
-    t.append(f"{short_model(a.model) or 'advisor'} · on call\n", style="bold medium_purple1")
-    t.append(f"calls  {a.calls}\n", style="grey70")
-    t.append("\nlast advice:\n", style="grey50")
-    t.append(a.last_advice or "(none yet)", style="white")
-    return Panel(t, title="advisor", border_style="medium_purple1", padding=(0, 1))
+    t.append(f"{short_model(a.model) or 'Advisor'} · on call\n", style="bold medium_purple1")
+    t.append("calls  ", style="grey50")
+    t.append(f"{a.calls}\n\n", style="bold")
+    t.append("last advice\n", style="grey50")
+    t.append(a.last_advice or "(none captured)", style="grey85" if a.last_advice else "grey42")
+    return Panel(t, title="advisor", border_style="medium_purple1", padding=(0, 1), expand=True)
 
 
-def bar(value: float | None, width: int = 12) -> Text:
+def bar(value: float | None, width: int = 10) -> Text:
     if value is None:
         return Text("░" * width, style="grey30")
     n = round(value * width)
-    style = "spring_green3" if value >= 0.7 else "orange3"
+    style = "spring_green3" if value >= 0.7 else "dark_orange"
     t = Text("█" * n, style=style)
     t.append("░" * (width - n), style="grey30")
     return t
 
 
+JEV_DECISIONS = ["jev_which_file", "jev_which_tool", "jev_retry_or_stop"]
+
+
 def jev_view(store: Store) -> Panel:
     j = store.jev
     t = Text()
-    t.append(f"JEV · fork layer   forks {j.forks}\n", style="bold spring_green3")
-    for name in sorted(j.decisions):
+    t.append("fork layer   ", style="grey50")
+    t.append(f"forks {j.forks}\n\n", style="bold spring_green3")
+    for name in JEV_DECISIONS + sorted(set(j.decisions) - set(JEV_DECISIONS)):
         conf = j.avg_confidence(name)
-        t.append(f"{name.removeprefix('jev_'):<14}")
+        label = name.removeprefix("jev_").replace("_", " ")
+        t.append(f"{label:<15}", style="grey70")
         t.append_text(bar(conf))
-        t.append(f" {conf:.2f}" if conf is not None else " n/a", style="grey70")
-        esc = int(j.decisions[name][2])
+        t.append(f" {conf:.2f}" if conf is not None else "  n/a", style="grey70" if conf else "grey42")
+        esc = int(j.decisions[name][2]) if name in j.decisions else 0
         if esc:
-            t.append(f"  ↑{esc} escalated", style="orange3")
+            t.append(f" ↑{esc}", style="dark_orange")
         t.append("\n")
-    if not j.decisions:
-        t.append("(no jev_* calls yet)", style="grey50")
-    return Panel(t, border_style="spring_green3", padding=(0, 1))
+    return Panel(t, title="JEV", border_style="spring_green3", padding=(0, 1), expand=True)
 
 
 def log_view(store: Store, lines: int = 8) -> Text:
-    t = Text()
+    t = Text(no_wrap=True, overflow="ellipsis")
     for ts, msg in store.log[-lines:]:
         stamp = time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "--:--:--"
         t.append(f"{stamp}  ", style="grey50")
-        t.append(msg + "\n")
+        style = "green" if msg.startswith("+") else ("red" if "failed" in msg else "grey70" if msg.startswith("-") else "medium_purple1")
+        t.append(msg + "\n", style=style)
     return t
 
 
