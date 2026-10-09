@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+# Project: agents-tree
+Python/Textual TUI that shows Claude Code agents (main, subagents, advisor, JEV) as a live tree.
+- Setup: `pip install -e '.[dev]'`; run: `agents-tree live [session.jsonl]` or `agents-tree replay <session.jsonl> --speed 4`; test: `python3 -m pytest -q` (one test: `pytest tests/test_store.py::test_tree_shape_and_status`).
+- Data flow: `sources/` (transcript parser, live tailers, replay clock, hook file) -> normalized `Event`s (`model.py`) -> `Store.apply` (`store.py`, pure reducer) -> `ui/render.py` (Rich renderables) -> `ui/app.py` (Textual). Live and replay share the Store; only the source differs.
+- Transcripts: `~/.claude/projects/<proj>/<session>.jsonl`; subagent transcripts are read from `<session>/subagents/agent-<id>.jsonl` (layout assumed, unverified against a real subagent run). The tool_use id of an `Agent`/`Task` call is the node id; `toolUseResult.agentId` becomes an alias. A sidechain id seen before its alias is bound heuristically (`Store._claim`).
+- Hooks (optional): `hooks/emit.py` appends SubagentStart/Stop events to `$AGENTS_TREE_EVENTS` (default `~/.claude/agents-tree-events.jsonl`); wiring them in `settings.json` is manual. Prices in `pricing.py` are estimates (override via `$AGENTS_TREE_PRICING`).
+- Fixtures in `tests/fixtures/` are hand-written minimal sessions, not real captures.
+
 # Advisor checkpoints
 - Call `advisor` before finalizing any multi-file architecture plan.
 - If the same test or compiler error fails twice, call `advisor` before a third attempt.
