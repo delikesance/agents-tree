@@ -61,6 +61,12 @@ type StateHost = StateDollar & Pick<CoreEngineInterface, 'store' | 'session'>
 
 const storeOf = ($: StateHost) => ({ get: (key: string) => $.store.get(key), set: (key: string, value: unknown) => $.store.set(key, value) })
 
+type MapHostSource = Pick<CoreEngineInterface, 'process' | 'fs' | 'model' | 'session'>
+
+const fsOf = ($: Pick<MapHostSource, 'fs'>) => ({ read: (path: string) => $.fs.read(path), write: (path: string, text: string) => $.fs.write(path, text), exists: (path: string) => $.fs.exists(path) })
+
+const mapHostOf = ($: MapHostSource): Parameters<typeof startMapUpkeep>[0] => ({ process: { run: (argv, init) => $.process.run(argv, init) }, fs: fsOf($), model: { complete: request => $.model.complete(request) }, session: { id: () => $.session.id() } })
+
 const persistState = async ($: StateHost) =>
   saveSnapshot(storeOf($), await $.session.id(), {
     usage: await read($, usageByAgent),
@@ -399,7 +405,7 @@ export const register: Register = on => {
     const modeAsked = await modeWanted($, e)
     const earlierFlow = isCommand ? undefined : takeFlow()
     const mapNote = isCommand ? undefined : takeMapNote()
-    startMapUpkeep($, projectDir.cwd, isCommand)
+    startMapUpkeep(mapHostOf($), projectDir.cwd, isCommand)
     if (!isCommand) {
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
@@ -409,7 +415,7 @@ export const register: Register = on => {
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
     const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, onlyIfChanged(session, 'map', mapNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
-    if (projectDir.cwd) void recordPrompt({ read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text) }, { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
+    if (projectDir.cwd) void recordPrompt(fsOf($), { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
 
@@ -418,7 +424,7 @@ export const register: Register = on => {
     const declared = await declaredModel(path => $.fs.read(path), [projectDir.cwd, await $.env.get('HOME')], e.subagentType).catch(() => undefined)
     const injected = route ? modelToInject(e.model, declared, route.model) : undefined
     const routed = route ? { ...e, prompt: route.prompt, ...(injected ? { model: injected } : {}) } : e
-    const result = await next({ ...routed, prompt: await pointAtMap($, projectDir.cwd, withReportLimit(routed.prompt)) })
+    const result = await next({ ...routed, prompt: await pointAtMap(mapHostOf($), projectDir.cwd, withReportLimit(routed.prompt)) })
     if (result.agentId) {
       const { agentId } = result
       const model = result.model ?? injected ?? declared
