@@ -30,9 +30,9 @@ import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, RE
 import type { Entry } from './knowledge'
 import { addUsage } from './pricing'
 import { DEDUPED_TOOLS, IMAGE_READ_DENY, WRITING_TOOLS, countImageRead, duplicateReadDeny, forgetReads, imageLimitReached, isImageRead, pendingReads, readKey, resetImageReads, settleRead } from './reads'
-import { GOAL_LABEL_PROMPT, ROUTER_MIN_PROMPT, ROUTER_PROMPT, firstLine, isQuestion, isWellBriefed, parseRoute, truncateGoal, withGoalContext, withMapPointer, withReportLimit } from './routing'
+import { GOAL_LABEL_PROMPT, ROUTER_MIN_PROMPT, ROUTER_PROMPT, firstLine, isQuestion, isWellBriefed, parseRoute, truncateGoal, withGoalContext, withReportLimit } from './routing'
 import { takeMapNote } from './mapEnsure'
-import { ensureProjectMap, projectMapExists } from './mapHost'
+import { pointAtMap, startMapUpkeep } from './mapWiring'
 import type { Route } from './routing'
 import { makePanel } from './panel'
 import { firstPrompt, relayTarget, threadLines } from './threadLines'
@@ -399,7 +399,7 @@ export const register: Register = on => {
     const modeAsked = await modeWanted($, e)
     const earlierFlow = isCommand ? undefined : takeFlow()
     const mapNote = isCommand ? undefined : takeMapNote()
-    if (!isCommand) void ensureProjectMap($, projectDir.cwd).catch(() => undefined)
+    startMapUpkeep($, projectDir.cwd, isCommand)
     if (!isCommand) {
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
@@ -418,8 +418,7 @@ export const register: Register = on => {
     const declared = await declaredModel(path => $.fs.read(path), [projectDir.cwd, await $.env.get('HOME')], e.subagentType).catch(() => undefined)
     const injected = route ? modelToInject(e.model, declared, route.model) : undefined
     const routed = route ? { ...e, prompt: route.prompt, ...(injected ? { model: injected } : {}) } : e
-    const mapExists = await projectMapExists($, projectDir.cwd)
-    const result = await next({ ...routed, prompt: withMapPointer(withReportLimit(routed.prompt), mapExists) })
+    const result = await next({ ...routed, prompt: await pointAtMap($, projectDir.cwd, withReportLimit(routed.prompt)) })
     if (result.agentId) {
       const { agentId } = result
       const model = result.model ?? injected ?? declared
