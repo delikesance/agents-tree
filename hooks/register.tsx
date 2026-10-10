@@ -6,10 +6,10 @@ import type { AgentUsage, GoalProgress } from '../types'
 import { PROGRESS_SECTION, PROGRESS_TOOL } from './progress'
 import type { Todo } from './activity'
 import { TASK_STATUS_DONE, countTask, describeCall, stepsToTodos, todoProgress, toTodos } from './activity'
-import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailure, recordSuccess, startCall, stopped } from './breaker'
+import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailure, recordSuccess, resetBreaker, startCall, stopped } from './breaker'
 import { stashFlow, takeFlow } from './backgroundFlow'
 import { BRIEF_KEY, BRIEF_TIMEOUT_MS, memoryBrief, withTimeout } from './brief'
-import { AUTO_COMPACT_KEEP, AUTO_COMPACT_KEY, AUTO_COMPACT_TOKENS, autoCompactState, contextNudge } from './compact'
+import { AUTO_COMPACT_KEEP, AUTO_COMPACT_KEY, AUTO_COMPACT_TOKENS, autoCompactState, contextNudge, resetNudge } from './compact'
 import { FLOW_KEY, FLOW_MAX_TOKENS, FLOW_PROMPT, FLOW_TIMEOUT_MS, looksMultiStep, parsePlan, planInput, recentContext } from './flow'
 import type { Plan } from './flow'
 import { runFlow } from './flowRun'
@@ -155,7 +155,7 @@ const noteFailure = async ($: JevHost, key: string, output: string) => {
 
 const setGoal = async ($: Completer & Parameters<typeof update>[0], agent: string, request: string) => {
   const context = (await read($, goalByAgent))[MAIN]
-  void update($, goalByAgent, all => ({ ...all, [agent]: all[agent] ?? truncateGoal(firstLine(request)) }))
+  update($, goalByAgent, all => ({ ...all, [agent]: all[agent] ?? truncateGoal(firstLine(request)) })).catch(() => undefined)
   const goal = await summarizeRequest($, request, context)
   await update($, goalByAgent, all => ({ ...all, [agent]: goal }))
 }
@@ -206,6 +206,8 @@ const modeFor = async ($: BriefHost & JevHost, e: Submission) => {
 type PlanHost = Completer & Parameters<typeof update>[0] & { session: { messages: () => Promise<unknown> } }
 
 const mainContext = { tokens: 0 }
+
+const projectDir: { cwd?: string } = {}
 
 const recentMessages = async ($: PlanHost) => {
   const messages = await $.session.messages()
@@ -258,6 +260,9 @@ export const register: Register = on => {
     void $.ui.open({ id: PANE, title: 'Agents' })
     wakeAnimation($)
     resetImageReads()
+    resetBreaker()
+    resetNudge(await $.session.id())
+    projectDir.cwd = (e as { cwd?: string }).cwd
     await restoreState($).catch(() => undefined)
     hydrateMemories(await loadKnowledge($))
     await $.tool.register(REMEMBER_TOOL)
@@ -389,7 +394,7 @@ export const register: Register = on => {
     const isCommand = e.text.startsWith('/')
     const flowWanted = await flowEnabled($, e)
     const modeAsked = await modeWanted($, e)
-    const earlierFlow = takeFlow()
+    const earlierFlow = isCommand ? undefined : takeFlow()
     if (!isCommand) {
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
@@ -398,8 +403,8 @@ export const register: Register = on => {
     if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
-    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, isCommand ? undefined : contextNudge(mainContext.tokens)].filter((text): text is string => !!text)
-    recordPrompt({ hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) })
+    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
+    recordPrompt({ hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
 

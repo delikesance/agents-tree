@@ -16,6 +16,11 @@ describe('summarize', () => {
     expect(summarize(['{bad', '', row(5)]).count).toBe(1)
   })
 
+  test('skips rows with a missing or non-numeric field', () => {
+    const rows = [JSON.stringify({ hookLatencyMs: 1, injectedChars: 2 }), JSON.stringify({ hookLatencyMs: 1, injectedChars: '2', modelCalls: 0 }), row(5)]
+    expect(summarize(rows).count).toBe(1)
+  })
+
   test('empty input yields zeros', () => {
     expect(summarize([]).p95LatencyMs).toBe(0)
   })

@@ -16,7 +16,7 @@ export function recordPrompt(metrics: PromptMetrics, cwd = process.cwd()): void 
 function parse(line: string): PromptMetrics | undefined {
   try {
     const row = JSON.parse(line)
-    return typeof row?.hookLatencyMs === 'number' ? row : undefined
+    return [row?.hookLatencyMs, row?.injectedChars, row?.modelCalls].every(Number.isFinite) ? row : undefined
   } catch {
     return undefined
   }
