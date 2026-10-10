@@ -5,8 +5,14 @@ const row = (hookLatencyMs: number) => JSON.stringify({ hookLatencyMs, injectedC
 
 const memoryFs = (files: Record<string, string> = {}) => ({
   files,
-  read: async (path: string) => (path in files ? files[path] : Promise.reject(new Error('missing'))),
-  write: async (path: string, text: string) => void (files[path] = text),
+  read: async (path: string) => {
+    const text = files[path]
+    if (text === undefined) throw new Error('missing')
+    return text
+  },
+  write: async (path: string, text: string) => {
+    files[path] = text
+  },
 })
 
 test('summarize: computes percentiles and averages', () => {
@@ -31,7 +37,7 @@ test('recordPrompt: appends one JSON line', async () => {
   const fs = memoryFs()
   await recordPrompt(fs, { hookLatencyMs: 3, injectedChars: 0, modelCalls: 0 }, '/p')
   await recordPrompt(fs, { hookLatencyMs: 4, injectedChars: 0, modelCalls: 0 }, '/p')
-  expect(summarize(fs.files[metricsPath('/p')].split('\n')).count).toBe(2)
+  expect(summarize((fs.files[metricsPath('/p')] ?? '').split('\n')).count).toBe(2)
 })
 
 test('recordPrompt: never throws on an unwritable path', async () => {
