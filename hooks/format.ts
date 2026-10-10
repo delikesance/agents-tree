@@ -41,16 +41,16 @@ export const formatReset = (resetsAt: string, now = Date.now()) => {
 const RESET_WIDTH = 6
 const MAX_PERCENT = 100
 const clampPercent = (value: number) => (Number.isFinite(value) ? Math.min(MAX_PERCENT, Math.max(0, Math.round(value))) : 0)
-export const rateBars = (limits: readonly { kind: string; percentUsed: number; resetsAt: string }[]) =>
+export const rateBars = (limits: readonly { kind: string; percentUsed: number; resetsAt?: string }[]) =>
   RATE_WINDOWS.flatMap(({ kind, label }) => {
     const limit = limits.find(l => l.kind === kind)
-    return limit ? [{ label, percent: clampPercent(limit.percentUsed), reset: `${formatReset(limit.resetsAt).padStart(RESET_WIDTH)} ${ICONS.reset}` }] : []
+    return limit ? [{ label, percent: clampPercent(limit.percentUsed), reset: limit.resetsAt ? `${formatReset(limit.resetsAt).padStart(RESET_WIDTH)} ${ICONS.reset}` : '' }] : []
   })
 export const contextSegments = (categories: readonly { name: string; tokens: number; kind: string }[], window?: number) => {
   const used = categories.filter(({ kind, tokens }) => kind === 'used' && tokens > 0).sort((a, b) => b.tokens - a.tokens)
   const total = window || used.reduce((sum, { tokens }) => sum + tokens, 0)
   const colors = segmentColors(used.length)
-  return used.map(({ name, tokens }, index) => ({ name, tokens: formatTokens(tokens), percent: clampPercent((tokens / total) * MAX_PERCENT), color: colors[index] }))
+  return used.map(({ name, tokens }, index) => ({ name, tokens: formatTokens(tokens), percent: clampPercent((tokens / total) * MAX_PERCENT), color: colors[index] ?? PALETTE.muted }))
 }
 const LEGEND_MAX = 3
 const OTHERS_LABEL = 'autres'
