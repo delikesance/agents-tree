@@ -16,6 +16,8 @@ const MIN_BAR_CELLS = 10
 const CARD_PADDING_X = 2
 const CARD_PADDING_Y = 1
 const INDENT = 2
+const CONNECTOR_MIDDLE = '├─ '
+const CONNECTOR_LAST = '└─ '
 const SPRITE_GAP = 2
 const GOAL_MARGIN_Y = 1
 const SECTION_MARGIN_TOP = 2
@@ -86,7 +88,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
     </Box>
   )
 
-  const AgentCard = ({ node, depth, route, onOpen, onDismiss }: { node: Node; depth: number; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
+  const AgentCard = ({ node, depth, last, route, onOpen, onDismiss }: { node: Node; depth: number; last: boolean; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
     const status = statusOf(node)
     const done = status === STATUSES.done
     return (
@@ -96,12 +98,14 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
           <Box flexDirection="column" flexGrow={1}>
             <Box justifyContent="space-between" flexWrap="wrap" columnGap={2}>
               <Text>
+                {depth > 0 && <Text color={PALETTE.muted}>{last ? CONNECTOR_LAST : CONNECTOR_MIDDLE}</Text>}
                 <Text bold color={PALETTE.text}>{node.label}</Text>{'  '}
                 <Text bold backgroundColor={status.background} color={status.color}>{` ${status.label} `}</Text>
                 {node.elapsed !== undefined && <Text color={PALETTE.muted}>  {done ? 'en ' : ''}{formatDuration(node.elapsed)}</Text>}
               </Text>
               {node.usage && <Text color={PALETTE.muted}>{shortModel(node.usage.model)}{route && ` · ${route}`}  {formatCost(node.usage.cost)}</Text>}
             </Box>
+            {node.id !== MAIN && node.launchedBy && <Text color={PALETTE.muted}>lancé par {node.launchedBy}</Text>}
             <Box marginY={GOAL_MARGIN_Y}>
               <Text bold color={PALETTE.text}>{done ? ICONS.done : ICONS.goal} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text>
             </Box>
