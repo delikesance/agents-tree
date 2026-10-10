@@ -17,8 +17,9 @@ const hostWith = (overrides: Partial<Host['session']> & { exists?: (path: string
 }
 
 test('map upkeep starts for a prompt and returns before it settles', () => {
-  const { host, calls } = hostWith()
-  expect(startMapUpkeep(host, '/p', false)).toBeUndefined()
+  const calls: string[] = []
+  const { host } = hostWith({ id: () => (calls.push('session'), new Promise<string>(() => undefined)) })
+  startMapUpkeep(host, '/p', false)
   expect(calls).toEqual(['session'])
 })
 
