@@ -1,4 +1,5 @@
 import { DANGER_FROM, RATE_LABEL_WIDTH, barLine, formatCost, formatDuration, formatTokens, levelColor, shortModel } from './format'
+import { frameTime } from './clock'
 import { PALETTE } from './palette'
 import { makeBadge } from './badge'
 import { ICONS } from './icons'
@@ -73,7 +74,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
 
   const Sprite = ({ node }: { node: Node }) => (
     <Box flexDirection="column" marginRight={SPRITE_GAP} flexShrink={0}>
-      {spriteLines(node.model ?? '', node.finished ? undefined : node.activity, Date.now(), node.finished).map(line => (
+      {spriteLines(node.model ?? '', node.finished ? undefined : node.activity, frameTime(), node.finished).map(line => (
         <Text>{line.map(({ char, fg, bg }) => <Text color={fg} backgroundColor={bg}>{char}</Text>)}</Text>
       ))}
     </Box>
@@ -82,7 +83,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
   const TodoList = ({ todos, settled }: { todos: Todo[]; settled: boolean }) => (
     <Box flexDirection="column" marginBottom={GOAL_MARGIN_Y}>
       {todos.slice(0, TODO_MAX_LINES).map(({ content, status }) => {
-        const { mark, color } = settled ? TODO_MARKS.completed : status === 'in_progress' ? { mark: spinnerFrame(Date.now()), color: PALETTE.text } : (TODO_MARKS[status as keyof typeof TODO_MARKS] ?? TODO_MARKS.pending)
+        const { mark, color } = settled ? TODO_MARKS.completed : status === 'in_progress' ? { mark: spinnerFrame(frameTime()), color: PALETTE.text } : (TODO_MARKS[status as keyof typeof TODO_MARKS] ?? TODO_MARKS.pending)
         return <Text wrap="truncate-end" color={color}>{mark} <Text color={settled || status === 'completed' ? PALETTE.muted : PALETTE.text}>{content}</Text></Text>
       })}
     </Box>
