@@ -45,6 +45,16 @@ test('an added, deleted or renamed file makes the map stale', async () => {
   expect(await mapStatus(reader(diff('R100\told.ts\tnew.ts\n'), text), HEAD)).toBe('stale')
 })
 
+test('the diff is limited to the working directory like git ls-files', async () => {
+  const argvs: string[][] = []
+  const run: Run = async argv => {
+    argvs.push(argv)
+    return { exitCode: 0, stdout: '' }
+  }
+  await mapStatus(reader(run, `<!-- map: ${WRITTEN} -->\n`), HEAD)
+  expect(argvs[0]).toContain('--relative')
+})
+
 test('a failing git diff makes the map stale', async () => {
   expect(await mapStatus(reader(diff('', 128), `<!-- map: ${WRITTEN} -->\n`), HEAD)).toBe('stale')
 })
