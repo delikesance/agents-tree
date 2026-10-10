@@ -2,9 +2,9 @@ import { expect, test } from 'claude-code/testing'
 
 import { declaredModel, modelToInject } from './declaredModel'
 
-const files = (contents: Record<string, string>) => async (path: string) => {
-  if (path in contents) return contents[path]
-  throw new Error('absent')
+const files = (contents: Record<string, string>) => (path: string): Promise<string> => {
+  const text = contents[path]
+  return text === undefined ? Promise.reject(new Error('absent')) : Promise.resolve(text)
 }
 const definition = (model?: string) => `---\nname: x\n${model ? `model: ${model}\n` : ''}---\nbody\nmodel: opus\n`
 
