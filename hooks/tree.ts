@@ -7,7 +7,7 @@ import type { Todo } from './activity'
 export const MAIN = 'main'
 export const isLive = (status: string) => status === 'running' || status === 'waiting' || status === 'pending'
 
-export type Node = { id: string; label: string; status: string; usage?: AgentUsage; activity?: string; model?: string; goal?: string; progress?: GoalProgress; todos?: Todo[]; elapsed?: number; reveal: number; finished?: boolean; children: Node[] }
+export type Node = { id: string; label: string; status: string; usage?: AgentUsage; activity?: string; model?: string; goal?: string; progress?: GoalProgress; todos?: Todo[]; elapsed?: number; reveal: number; finished?: boolean; launchedBy?: string; children: Node[] }
 
 type Lifecycle = { startedAt: number; endedAt?: number }
 const lifecycle = new Map<string, Lifecycle>()
@@ -44,16 +44,21 @@ export const buildTree = (agents: readonly AgentInfo[], usage: Record<string, Ag
     agents.map(a => [a.id, { id: a.id, label: `${agentName(a.id)} · ${a.type}`, status: a.status, usage: usage[a.id], model: usage[a.id]?.model ?? models[a.id], activity: activity[a.id], goal: goals[a.id], progress: progress[a.id], todos: todos[a.id], elapsed: elapsedOf(a.id, now), reveal: revealOf(a.id), children: [] }]),
   )
   const root: Node = { id: MAIN, label: 'main', status: 'running', finished: mainFinished, usage: usage[MAIN], model: usage[MAIN]?.model, activity: activity[MAIN], goal: goals[MAIN], progress: progress[MAIN], todos: todos[MAIN], elapsed: elapsedOf(MAIN, now), reveal: 1, children: [] }
-  agents.forEach(a => ((a.parentId && nodes.get(a.parentId)) || root).children.push(nodes.get(a.id)!))
+  agents.forEach(a => {
+    const parent = (a.parentId && nodes.get(a.parentId)) || root
+    nodes.get(a.id)!.launchedBy = parent.label
+    parent.children.push(nodes.get(a.id)!)
+  })
   return { ...root, children: root.children.map(pruneInactive).filter((c): c is Node => !!c) }
 }
 const pruneInactive = (node: Node): Node | undefined => {
   const children = node.children.map(pruneInactive).filter((c): c is Node => !!c)
   return node.reveal > 0 || children.length ? { ...node, children } : undefined
 }
-export const flatten = (node: Node, depth = 0): { node: Node; depth: number }[] => [
-  { node, depth },
-  ...[...node.children].reverse().flatMap(child => flatten(child, depth + 1)),
+export type Row = { node: Node; depth: number; last: boolean }
+export const flatten = (node: Node, depth = 0, last = true): Row[] => [
+  { node, depth, last },
+  ...[...node.children].reverse().flatMap((child, index, siblings) => flatten(child, depth + 1, index === siblings.length - 1)),
 ]
 
 export const sumTree = (node: Node): AgentUsage | undefined =>

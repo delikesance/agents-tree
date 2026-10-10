@@ -451,7 +451,7 @@ export const register: Register = on => {
           {quotas.map(quota => <Quota {...quota} />)}
         </Section>
         <Section title="AGENTS" icon={ICONS.agents}>
-          {rows.map(({ node, depth }) => <AgentCard node={node} depth={depth} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
+          {rows.map(({ node, depth, last }) => <AgentCard node={node} depth={depth} last={last} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
         </Section>
       </Box>
     )
