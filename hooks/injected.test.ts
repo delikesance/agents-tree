@@ -18,9 +18,11 @@ test('context nudge is imperative and names both commands', () => {
   expect(CONTEXT_NUDGE).toContain('/clear')
 })
 
-test('multi-step prompts are detected, short single asks are not', () => {
+test('multi-step prompts need multi-file or multi-repo signals', () => {
   expect(looksMultiStep('corrige la faute dans le titre')).toBe(false)
   expect(looksMultiStep('modifie a.ts et b.ts')).toBe(true)
-  expect(looksMultiStep('fais ceci puis cela')).toBe(true)
-  expect(looksMultiStep('1. un\n2. deux')).toBe(true)
+  expect(looksMultiStep('migre les clients sur plusieurs repos')).toBe(true)
+  expect(looksMultiStep('fais ceci puis cela')).toBe(false)
+  expect(looksMultiStep('1. un\n2. deux')).toBe(false)
+  expect(looksMultiStep('x'.repeat(300))).toBe(false)
 })

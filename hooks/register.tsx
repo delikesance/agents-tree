@@ -7,11 +7,16 @@ import { PROGRESS_SECTION, PROGRESS_TOOL } from './progress'
 import type { Todo } from './activity'
 import { TASK_STATUS_DONE, countTask, describeCall, stepsToTodos, todoProgress, toTodos } from './activity'
 import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailure, recordSuccess, startCall, stopped } from './breaker'
-import { BRIEF_HEADER, BRIEF_KEY, BRIEF_MAX_HITS, BRIEF_TIMEOUT_MS, briefTitle, withTimeout } from './brief'
+import { stashFlow, takeFlow } from './backgroundFlow'
+import { BRIEF_KEY, BRIEF_TIMEOUT_MS, memoryBrief, withTimeout } from './brief'
 import { AUTO_COMPACT_KEEP, AUTO_COMPACT_KEY, AUTO_COMPACT_TOKENS, autoCompactState, contextNudge } from './compact'
 import { FLOW_KEY, FLOW_MAX_TOKENS, FLOW_PROMPT, FLOW_TIMEOUT_MS, looksMultiStep, parsePlan, planInput, recentContext } from './flow'
 import type { Plan } from './flow'
 import { runFlow } from './flowRun'
+import type { FlowActions } from './flowRun'
+import { recordPrompt } from './metrics'
+import { relevantMemories } from './recall-inject'
+import { parseRemember } from './remember'
 import { onlyIfChanged } from './injected'
 import { makeBanner } from './banner'
 import { makeContext } from './contextSection'
@@ -20,11 +25,11 @@ import { ICONS } from './icons'
 import { MODE_CRITERIA, MODE_KEY, modeAdvice } from './mode'
 import { JEV_MIN_CONFIDENCE, JEV_TASK_MAX, JEV_URL, MODEL_CRITERIA, jevFailure } from './jev'
 import type { JevChoice, JevHost } from './jev'
-import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, REMEMBER_TOOL, SECRET_MASK, SECRET_PATTERN, STORE_KEY, clip, rank, search, tokenize, upsert } from './knowledge'
+import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, REMEMBER_TOOL, SECRET_MASK, SECRET_PATTERN, STORE_KEY, clip, search, tokenize, upsert } from './knowledge'
 import type { Entry } from './knowledge'
 import { addUsage } from './pricing'
 import { DEDUPED_TOOLS, IMAGE_READ_DENY, WRITING_TOOLS, countImageRead, duplicateReadDeny, forgetReads, imageLimitReached, isImageRead, pendingReads, readKey, resetImageReads, settleRead } from './reads'
-import { GOAL_LABEL_PROMPT, ROUTER_MIN_PROMPT, ROUTER_PROMPT, firstLine, isQuestion, parseRoute, truncateGoal, withGoalContext, withReportLimit } from './routing'
+import { GOAL_LABEL_PROMPT, ROUTER_MIN_PROMPT, ROUTER_PROMPT, firstLine, isQuestion, isWellBriefed, parseRoute, truncateGoal, withGoalContext, withReportLimit } from './routing'
 import type { Route } from './routing'
 import { makePanel } from './panel'
 import { firstPrompt, relayTarget, threadLines } from './threadLines'
@@ -32,7 +37,7 @@ import { makeThread } from './thread'
 import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
-import { MAIN, buildTree, flatten, isLive, rememberAgents, trackLifecycle } from './tree'
+import { MAIN, buildTree, flatten, isLive, rememberAgents, trackLifecycle, visibleAgents } from './tree'
 import { mainTurn, wakeClock } from './clock'
 
 const usageByAgent = atom({ plugin: 'agent-graph', key: 'usage' } as const, {} as Record<string, AgentUsage>)
@@ -129,7 +134,7 @@ const jevModel = ($: JevHost, prompt: string) =>
 
 const routeSpawn = async ($: Completer & JevHost, prompt: string): Promise<Route | undefined> => {
   const verdict = await jevModel($, prompt)
-  if (prompt.length < ROUTER_MIN_PROMPT) return verdict.choice ? { model: verdict.choice, prompt, source: verdict.note } : undefined
+  if (prompt.length < ROUTER_MIN_PROMPT || isWellBriefed(prompt)) return verdict.choice ? { model: verdict.choice, prompt, source: verdict.note } : undefined
   const reply = await $.model.complete({ model: 'haiku', prompt: ROUTER_PROMPT + prompt, effort: 'low', maxTokens: 1500 })
   const route = reply.isAnswered && reply.text ? parseRoute(reply.text) : undefined
   if (!route) return undefined
@@ -150,6 +155,7 @@ const noteFailure = async ($: JevHost, key: string, output: string) => {
 
 const setGoal = async ($: Completer & Parameters<typeof update>[0], agent: string, request: string) => {
   const context = (await read($, goalByAgent))[MAIN]
+  void update($, goalByAgent, all => ({ ...all, [agent]: all[agent] ?? truncateGoal(firstLine(request)) }))
   const goal = await summarizeRequest($, request, context)
   await update($, goalByAgent, all => ({ ...all, [agent]: goal }))
 }
@@ -177,10 +183,7 @@ const learn = async ($: Parameters<typeof update>[0], goal: string, report: stri
 
 type BriefHost = Completer & Parameters<typeof update>[0]
 
-const buildBrief = async ($: BriefHost, text: string) => {
-  const leads = rank(await loadKnowledge($), text, BRIEF_MAX_HITS).map(({ key }) => `- ${briefTitle(key)}`)
-  return leads.length ? `${BRIEF_HEADER}\n${leads.join('\n')}` : undefined
-}
+const buildBrief = (text: string) => memoryBrief(relevantMemories(text))
 
 type Submission = { text: string; turnId?: string; origin: { kind: string } }
 
@@ -188,11 +191,11 @@ const isComposerPrompt = (e: Submission) => !e.text.startsWith('/') && !e.turnId
 
 const isBriefable = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && !!(await $.store.get(BRIEF_KEY))
 
-const briefFor = async ($: BriefHost, e: Submission) =>
-  (await isBriefable($, e)) ? withTimeout(buildBrief($, e.text), BRIEF_TIMEOUT_MS) : undefined
+const briefFor = async ($: BriefHost, e: Submission) => ((await isBriefable($, e)) ? buildBrief(e.text) : undefined)
+
+const modeWanted = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && looksMultiStep(e.text) && !!(await $.store.get(MODE_KEY))
 
 const modeFor = async ($: BriefHost & JevHost, e: Submission) => {
-  if (!isComposerPrompt(e) || !(await $.store.get(MODE_KEY))) return undefined
   const verdict = await jevChoice($, { task: e.text.slice(0, JEV_TASK_MAX) }, 'Which working mode does `task` need?', MODE_CRITERIA)
   return modeAdvice(verdict.choice)
 }
@@ -216,6 +219,13 @@ const planRequest = async ($: PlanHost, request: string): Promise<Plan> => {
 const mainState = async ($: Parameters<typeof update>[0]) => {
   const usage = (await read($, usageByAgent))[MAIN]
   return { tokens: mainContext.tokens, model: usage?.model, cacheHitRate: usage ? cacheHitRate(usage) : 0 }
+}
+
+const startFlow = async ($: PlanHost, actions: FlowActions, e: Submission) => {
+  const plan = await withTimeout(planRequest($, e.text), FLOW_TIMEOUT_MS)
+  if (!plan) return
+  if (plan.goal) void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(plan.goal as string) }))
+  stashFlow(await runFlow(actions, plan.features, await mainState($)))
 }
 
 const flowEnabled = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && looksMultiStep(e.text) && !!(await $.store.get(FLOW_KEY))
@@ -316,9 +326,10 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: `${TOOL_PREFIX}remember` }, async ($, e) => {
-    const { key, text, tags = [] } = e as unknown as Pick<Entry, 'key' | 'text'> & { tags?: string[] }
-    await saveEntry($, { key, text, tags, at: Date.now() })
-    return { result: `Enregistré: ${key}` }
+    const parsed = parseRemember(e as unknown as { key?: string; text?: string; tags?: string[] })
+    if ('error' in parsed) return { result: parsed.error }
+    await saveEntry($, { ...parsed.entry, at: Date.now() })
+    return { result: `Enregistré: ${parsed.entry.key}` }
   })
 
   on('tool.call', { tool: `${TOOL_PREFIX}recall` }, async ($, e) => {
@@ -370,16 +381,21 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    const plan = (await flowEnabled($, e)) ? await withTimeout(planRequest($, e.text), FLOW_TIMEOUT_MS).catch(() => undefined) : undefined
-    if (!e.text.startsWith('/')) {
-      if (plan?.goal) void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(plan.goal as string) }))
-      else void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
+    const started = Date.now()
+    const isCommand = e.text.startsWith('/')
+    const flowWanted = await flowEnabled($, e)
+    const modeAsked = await modeWanted($, e)
+    const earlierFlow = takeFlow()
+    if (!isCommand) {
+      void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
       void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
     }
-    const [brief, mode, flow] = await Promise.all([briefFor($, e).catch(() => undefined), withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined), plan ? runFlow({ explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, plan.features, await mainState($)).catch(() => undefined) : undefined])
+    if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
+    const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
-    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), flow, (e.text.startsWith('/') ? undefined : contextNudge(mainContext.tokens))].filter((text): text is string => !!text)
+    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, isCommand ? undefined : contextNudge(mainContext.tokens)].filter((text): text is string => !!text)
+    recordPrompt({ hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) })
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
 
@@ -392,7 +408,7 @@ export const register: Register = on => {
       const model = result.model ?? route?.model
       if (model) void update($, modelByAgent, all => ({ ...all, [agentId]: model }))
       if (route) void update($, routeSourceByAgent, all => ({ ...all, [agentId]: route.source }))
-      void setGoal($, agentId, route?.prompt ?? e.prompt)
+      void setGoal($, agentId, route?.prompt ?? e.prompt).catch(() => undefined)
     }
     return result
   })
@@ -421,7 +437,7 @@ export const register: Register = on => {
     const agents = rememberAgents(await $.agent.list())
     trackLifecycle(agents, now)
     const root = buildTree(agents, usage, activity, goals, progress, todos, models, await read($, mainFinishedAtom), now)
-    const rows = flatten(root).slice(0, Math.max(1, Math.floor(((e.viewport?.rows ?? 24) - ROW_CHROME) / ROWS_FALLBACK_PER_AGENT)))
+    const { shown: rows, hidden } = visibleAgents(flatten(root), Math.max(1, Math.floor(((e.viewport?.rows ?? 24) - ROW_CHROME) / ROWS_FALLBACK_PER_AGENT)))
     const session = await $.session.usage({ breakdown: 'summary' })
     const quotas = mostUrgent(rateBars(session.rateLimits))
     const { breakdown } = session.context
@@ -466,6 +482,7 @@ export const register: Register = on => {
         </Section>
         <Section title="AGENTS" icon={ICONS.agents}>
           {rows.map(({ node, depth, last }) => <AgentCard node={node} depth={depth} last={last} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
+          {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
       </Box>
     )

@@ -28,3 +28,7 @@ const REPORT_LIMIT_PRESENT = /\b\d+\s*(lines?|lignes?)\b/i
 
 export const withReportLimit = (prompt: string) => (prompt.includes(REPORT_LIMIT_NOTE) || REPORT_LIMIT_PRESENT.test(prompt) ? prompt : `${prompt}\n\n${REPORT_LIMIT_NOTE}`)
 export const isQuestion = (line: string) => line.trim().endsWith('?')
+
+const FILE_PATH = /[\w-]+(?:\/[\w.-]+)+|[\w-]+\.\w{1,5}\b/
+
+export const isWellBriefed = (prompt: string) => FILE_PATH.test(prompt) && (prompt.includes(REPORT_LIMIT_NOTE) || REPORT_LIMIT_PRESENT.test(prompt))
