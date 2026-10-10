@@ -12,10 +12,12 @@ const writtenCommit = (text: string) => COMMIT_LINE.exec(text.split('\n', 1)[0] 
 const changesStructure = (nameStatus: string) =>
   nameStatus.split('\n').some(line => line.split('\t').slice(1).some(path => path !== MAP_FILE))
 
-export const mapStatus = async (run: Run, read: (path: string) => Promise<string>, head: string): Promise<MapStatus> => {
+export type MapReader = { run: Run; read: (path: string) => Promise<string>; exists: (path: string) => Promise<boolean> }
+
+export const mapStatus = async ({ run, read, exists }: MapReader, head: string): Promise<MapStatus> => {
+  if (!(await exists(MAP_FILE))) return 'missing'
   const text = await read(MAP_FILE).catch(() => undefined)
-  if (text === undefined) return 'missing'
-  const written = writtenCommit(text)
+  const written = text === undefined ? undefined : writtenCommit(text)
   if (!written) return 'manual'
   if (written === head) return 'fresh'
   const diff = await run(['git', 'diff', '--name-status', '-M', '--diff-filter=ADR', written, head])

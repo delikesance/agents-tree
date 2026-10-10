@@ -1,14 +1,12 @@
 import { withTimeout } from './brief'
 import { MAP_FILE } from './mapState'
-import type { Run } from './mapState'
+import type { MapReader } from './mapState'
 import { SUMMARY_PROMPT, buildMap, parseSummaries, summaryInput, topDirectories } from './mapSkeleton'
 import { detectTestCommand } from './testCommand'
 
 const SUMMARY_TIMEOUT_MS = 20_000
 
-export type MapIo = {
-  run: Run
-  read: (path: string) => Promise<string>
+export type MapIo = MapReader & {
   write: (path: string, text: string) => Promise<void>
   complete: (prompt: string) => Promise<string | undefined>
 }

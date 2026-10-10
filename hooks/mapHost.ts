@@ -16,6 +16,7 @@ const inProject = (cwd: string | undefined, path: string) => (cwd ? `${cwd}/${pa
 
 const mapIo = ($: MapHost, cwd?: string): MapIo => ({
   run: argv => $.process.run(argv, { cwd, timeoutMs: GIT_TIMEOUT_MS }),
+  exists: path => $.fs.exists(inProject(cwd, path)),
   read: path => $.fs.read(inProject(cwd, path)),
   write: (path, text) => $.fs.write(inProject(cwd, path), text),
   complete: async prompt => {

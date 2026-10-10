@@ -20,7 +20,7 @@ export const ensureMap = async (io: MapIo, session: string) => {
   const key = `${session}:${head}`
   if (attempted.has(key)) return
   attempted.add(key)
-  const status = await mapStatus(io.run, io.read, head)
+  const status = await mapStatus(io, head)
   if (status === 'fresh' || status === 'manual') return
   await writeMap(io, head)
   pendingNote = noteFor(status === 'missing' ? 'created' : 'regenerated')
