@@ -23,7 +23,7 @@ function parse(line: string): PromptMetrics | undefined {
 
 function percentile(sorted: number[], p: number): number {
   if (!sorted.length) return 0
-  return sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)]
+  return sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)] ?? 0
 }
 
 const average = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0)
