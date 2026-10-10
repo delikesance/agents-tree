@@ -1,4 +1,2 @@
-/agents-tree
-/bin/
-*.test
-/.claude/
+node_modules/
+.worktrees/

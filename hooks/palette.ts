@@ -1,0 +1,15 @@
+export const PALETTE = {
+  text: '#e6e3dc',
+  muted: '#b3afa4',
+  card: '#1f1f1d',
+  surface: '#2b2b29',
+  rule: '#3a3a37',
+  green: '#7ec28b',
+  yellow: '#e2c25b',
+  red: '#e06c6c',
+  badgeGreen: '#2f7d4a',
+  badgeRed: '#c94a4a',
+  errorRow: '#5a2626',
+  onBadge: '#ffffff',
+  onYellow: '#141413',
+} as const
