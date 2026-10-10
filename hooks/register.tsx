@@ -9,9 +9,10 @@ import { TASK_STATUS_DONE, countTask, describeCall, stepsToTodos, todoProgress, 
 import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailure, recordSuccess, startCall, stopped } from './breaker'
 import { BRIEF_HEADER, BRIEF_KEY, BRIEF_MAX_HITS, BRIEF_MAX_TOKENS, BRIEF_PROMPT, BRIEF_TIMEOUT_MS, isVague, withTimeout } from './brief'
 import { AUTO_COMPACT_KEEP, AUTO_COMPACT_KEY, AUTO_COMPACT_TOKENS, autoCompactState, contextNudge } from './compact'
-import { FLOW_KEY, FLOW_MAX_TOKENS, FLOW_PROMPT, FLOW_TIMEOUT_MS, parsePlan, planInput, recentContext } from './flow'
+import { FLOW_KEY, FLOW_MAX_TOKENS, FLOW_PROMPT, FLOW_TIMEOUT_MS, looksMultiStep, parsePlan, planInput, recentContext } from './flow'
 import type { Plan } from './flow'
 import { runFlow } from './flowRun'
+import { onlyIfChanged } from './injected'
 import { makeBanner } from './banner'
 import { makeContext } from './contextSection'
 import { cacheHitRate, clampedPercent, compactionLimit, contextSegments, contextSummary, percent, mostUrgent, rateBars, usageLines } from './format'
@@ -213,7 +214,7 @@ const mainState = async ($: Parameters<typeof update>[0]) => {
   return { tokens: mainContext.tokens, model: usage?.model, cacheHitRate: usage ? cacheHitRate(usage) : 0 }
 }
 
-const flowEnabled = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && !!(await $.store.get(FLOW_KEY))
+const flowEnabled = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && looksMultiStep(e.text) && !!(await $.store.get(FLOW_KEY))
 
 const autoCompact = async ($: Parameters<typeof update>[0] & { session: { compact: (args: { instructions: string }) => Promise<unknown> } }, tokens: number) => {
   if (tokens < AUTO_COMPACT_TOKENS) autoCompactState.armed = true
@@ -365,7 +366,8 @@ export const register: Register = on => {
       void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
     }
     const [brief, mode, flow] = await Promise.all([briefFor($, e).catch(() => undefined), withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined), plan ? runFlow({ explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, plan.features, await mainState($)).catch(() => undefined) : undefined])
-    const added = [brief, mode, flow, (e.text.startsWith('/') ? undefined : contextNudge(mainContext.tokens))].filter((text): text is string => !!text)
+    const session = await $.session.id()
+    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), flow, (e.text.startsWith('/') ? undefined : contextNudge(mainContext.tokens))].filter((text): text is string => !!text)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
 
