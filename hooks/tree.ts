@@ -1,5 +1,6 @@
 import { agentName } from './names'
-import { isDismissed } from './select'
+import { cardHeight } from './cardHeight'
+import { forgetDismissed, isDismissed } from './select'
 import type { AgentInfo } from 'claude-code'
 import type { AgentUsage, GoalProgress } from '../types'
 import type { Todo } from './activity'
@@ -21,13 +22,19 @@ export const trackLifecycle = (agents: readonly AgentInfo[], now: number) => {
   })
 }
 
+const GONE = 'gone'
 const seen = new Map<string, AgentInfo>()
 
 export const rememberAgents = (agents: readonly AgentInfo[]): AgentInfo[] => {
   const current = new Set(agents.map(({ id }) => id))
+  seen.forEach((agent, id) => {
+    if (current.has(id) || agent.status !== GONE) return
+    ;[seen, lifecycle].forEach(store => store.delete(id))
+    forgetDismissed(id)
+  })
   agents.forEach(agent => seen.set(agent.id, agent))
   seen.forEach((agent, id) => {
-    if (!current.has(id) && isLive(agent.status)) seen.set(id, { ...agent, status: 'completed' })
+    if (!current.has(id) && isLive(agent.status)) seen.set(id, { ...agent, status: GONE })
   })
   return [...seen.values()]
 }
@@ -46,7 +53,7 @@ export const buildTree = (agents: readonly AgentInfo[], usage: Record<string, Ag
   const root: Node = { id: MAIN, label: 'main', status: 'running', finished: mainFinished, usage: usage[MAIN], model: usage[MAIN]?.model, activity: activity[MAIN], goal: goals[MAIN], progress: progress[MAIN], todos: todos[MAIN], elapsed: elapsedOf(MAIN, now), reveal: 1, children: [] }
   agents.forEach(a => {
     const parent = (a.parentId && nodes.get(a.parentId)) || root
-    nodes.get(a.id)!.launchedBy = parent.label
+    if (parent !== root) nodes.get(a.id)!.launchedBy = parent.label
     parent.children.push(nodes.get(a.id)!)
   })
   return { ...root, children: root.children.map(pruneInactive).filter((c): c is Node => !!c) }
@@ -55,11 +62,47 @@ const pruneInactive = (node: Node): Node | undefined => {
   const children = node.children.map(pruneInactive).filter((c): c is Node => !!c)
   return node.reveal > 0 || children.length ? { ...node, children } : undefined
 }
-export type Row = { node: Node; depth: number; last: boolean }
-export const flatten = (node: Node, depth = 0, last = true): Row[] => [
-  { node, depth, last },
-  ...[...node.children].reverse().flatMap((child, index, siblings) => flatten(child, depth + 1, index === siblings.length - 1)),
+export type Row = { node: Node; depth: number; last: boolean; ancestorsLast: boolean[] }
+export const flatten = (node: Node, depth = 0, last = true, ancestorsLast: boolean[] = []): Row[] => [
+  { node, depth, last, ancestorsLast },
+  ...[...node.children].reverse().flatMap((child, index, siblings) => flatten(child, depth + 1, index === siblings.length - 1, depth > 0 ? [...ancestorsLast, last] : ancestorsLast)),
 ]
+
+const isActive = ({ node }: Row) => node.id === MAIN || isLive(node.status)
+const parentIndexes = (rows: readonly Row[]) => {
+  const path: number[] = []
+  return rows.map(({ depth }, index) => {
+    path.length = depth
+    const parent = path[depth - 1] ?? -1
+    path[depth] = index
+    return parent
+  })
+}
+const totalHeight = (rows: readonly Row[], compact: boolean) => rows.reduce((sum, { node }) => sum + cardHeight(node, compact), 0)
+export const needsCompact = (rows: readonly Row[], maxRows: number) => totalHeight(rows, false) > maxRows
+
+export function visibleAgents<T extends Row>(nodes: readonly T[], maxRows: number): { shown: T[]; hidden: number } {
+  const compact = needsCompact(nodes, maxRows)
+  const parents = parentIndexes(nodes)
+  const kept = new Set<number>()
+  let used = 0
+  const keep = (index: number) => {
+    for (let i = index; i >= 0 && !kept.has(i); i = parents[i]) {
+      kept.add(i)
+      used += cardHeight(nodes[i].node, compact)
+    }
+  }
+  const costOf = (index: number) => {
+    let cost = 0
+    for (let i = index; i >= 0 && !kept.has(i); i = parents[i]) cost += cardHeight(nodes[i].node, compact)
+    return cost
+  }
+  nodes.forEach((row, index) => isActive(row) && keep(index))
+  nodes.forEach((_, index) => {
+    if (!kept.has(index) && used + costOf(index) <= maxRows) keep(index)
+  })
+  return { shown: nodes.filter((_, index) => kept.has(index)), hidden: nodes.length - kept.size }
+}
 
 export const sumTree = (node: Node): AgentUsage | undefined =>
   [node.usage, ...node.children.map(sumTree)].reduce<AgentUsage | undefined>(

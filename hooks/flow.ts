@@ -136,15 +136,8 @@ export const directive = (spawned: Feature[], rest: Feature[], decision: FlowDec
   return `${FLOW_HEADER}\n${lines.join('\n')}${remaining}\nSuis l'avancement avec TodoWrite, puis relis et vérifie leurs rapports. (${cost})`
 }
 
-const MULTI_STEP_MIN_CHARS = 150
 const MULTI_STEP_FILES = 2
-const MULTI_STEP_LIST_ITEMS = 2
 const FILE_REFERENCE = /[\w./-]+\.\w{1,5}\b/g
-const LIST_ITEM = /^\s*(?:\d+[.)]|[-*])\s/gm
-const SEQUENCE_WORDS = /\b(puis|ensuite|après ça|et aussi|plusieurs fichiers|refactor\w*|migr\w+|then|also|all files|step by step)\b/i
+const MULTI_SCOPE_WORDS = /\b(plusieurs fichiers|all files|multiple files|multi-?repos?|plusieurs (?:repos?|dépôts)|several repos|across repos|refactor\w*|migr\w+)\b/i
 
-export const looksMultiStep = (text: string) =>
-  text.length >= MULTI_STEP_MIN_CHARS ||
-  (text.match(FILE_REFERENCE)?.length ?? 0) >= MULTI_STEP_FILES ||
-  (text.match(LIST_ITEM)?.length ?? 0) >= MULTI_STEP_LIST_ITEMS ||
-  SEQUENCE_WORDS.test(text)
+export const looksMultiStep = (text: string) => (text.match(FILE_REFERENCE)?.length ?? 0) >= MULTI_STEP_FILES || MULTI_SCOPE_WORDS.test(text)
