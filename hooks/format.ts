@@ -13,11 +13,12 @@ const RATE_WINDOWS = [
   { kind: 'five_hour', label: 'session' },
   { kind: 'seven_day', label: 'semaine' },
 ]
+const DANGER_LEVEL = { from: 85, color: PALETTE.red }
 const LEVELS = [
-  { from: 85, color: PALETTE.red },
+  DANGER_LEVEL,
   { from: 60, color: PALETTE.yellow },
 ]
-export const DANGER_FROM = LEVELS[0].from
+export const DANGER_FROM = DANGER_LEVEL.from
 export const levelColor = (pct: number) => LEVELS.find(l => pct >= l.from)?.color ?? PALETTE.green
 const LINE_CELL = '━'
 const HALF_CELL = '╸'
