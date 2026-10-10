@@ -7,7 +7,7 @@ import { PROGRESS_SECTION, PROGRESS_TOOL } from './progress'
 import type { Todo } from './activity'
 import { TASK_STATUS_DONE, countTask, describeCall, stepsToTodos, todoProgress, toTodos } from './activity'
 import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailure, recordSuccess, startCall, stopped } from './breaker'
-import { BRIEF_HEADER, BRIEF_KEY, BRIEF_MAX_HITS, BRIEF_MAX_TOKENS, BRIEF_PROMPT, BRIEF_TIMEOUT_MS, isVague, withTimeout } from './brief'
+import { BRIEF_HEADER, BRIEF_KEY, BRIEF_MAX_HITS, BRIEF_TIMEOUT_MS, briefTitle, withTimeout } from './brief'
 import { AUTO_COMPACT_KEEP, AUTO_COMPACT_KEY, AUTO_COMPACT_TOKENS, autoCompactState, contextNudge } from './compact'
 import { FLOW_KEY, FLOW_MAX_TOKENS, FLOW_PROMPT, FLOW_TIMEOUT_MS, looksMultiStep, parsePlan, planInput, recentContext } from './flow'
 import type { Plan } from './flow'
@@ -20,7 +20,7 @@ import { ICONS } from './icons'
 import { MODE_CRITERIA, MODE_KEY, modeAdvice } from './mode'
 import { JEV_MIN_CONFIDENCE, JEV_TASK_MAX, JEV_URL, MODEL_CRITERIA, jevFailure } from './jev'
 import type { JevChoice, JevHost } from './jev'
-import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, REMEMBER_TOOL, SECRET_MASK, SECRET_PATTERN, STORE_KEY, clip, rank, search, snippet, tokenize, upsert } from './knowledge'
+import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, REMEMBER_TOOL, SECRET_MASK, SECRET_PATTERN, STORE_KEY, clip, rank, search, tokenize, upsert } from './knowledge'
 import type { Entry } from './knowledge'
 import { addUsage } from './pricing'
 import { DEDUPED_TOOLS, IMAGE_READ_DENY, WRITING_TOOLS, countImageRead, duplicateReadDeny, forgetReads, imageLimitReached, isImageRead, pendingReads, readKey, resetImageReads, settleRead } from './reads'
@@ -32,7 +32,8 @@ import { makeThread } from './thread'
 import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
-import { MAIN, buildTree, flatten, rememberAgents, trackLifecycle } from './tree'
+import { MAIN, buildTree, flatten, isLive, rememberAgents, trackLifecycle } from './tree'
+import { mainTurn, wakeClock } from './clock'
 
 const usageByAgent = atom({ plugin: 'agent-graph', key: 'usage' } as const, {} as Record<string, AgentUsage>)
 
@@ -86,12 +87,22 @@ const PANE = 'agent-graph'
 const ROW_CHROME = 12
 const COMPACT_BANNER_ROWS = 30
 const THREAD_CHROME = 8
-const ANIMATION_MS = 120
-const TIMER_KEY = '__agentGraphTimer'
 
 type Completer = { model: { complete: (request: { model: string; prompt: string; effort: 'low'; maxTokens: number }) => Promise<{ isAnswered: boolean; text?: string }> } }
 
+const summaries = new Map<string, string>()
+
 const summarizeRequest = async ($: Completer, request: string, context?: string) => {
+  const cacheKey = `${context ?? ''}\n${request}`
+  const cached = summaries.get(cacheKey)
+  if (cached) return cached
+  const summary = await requestSummary($, request, context)
+  summaries.set(cacheKey, summary)
+  evictOldest(summaries)
+  return summary
+}
+
+const requestSummary = async ($: Completer, request: string, context?: string) => {
   const reply = await $.model.complete({ model: 'haiku', prompt: GOAL_LABEL_PROMPT + withGoalContext(request, context), effort: 'low', maxTokens: 60 })
   const label = firstLine(reply.isAnswered && reply.text ? reply.text : '')
   return truncateGoal(label && !isQuestion(label) ? label : (context ?? firstLine(request)))
@@ -147,11 +158,10 @@ const setGoal = async ($: Completer & Parameters<typeof update>[0], agent: strin
 const ROWS_FALLBACK_PER_AGENT = 6
 const DEFAULT_COLS = 60
 
-const startAnimationClock = ($: { ui: { invalidate: (event: 'ui.render') => void } }) => {
-  const scope = globalThis as Record<string, unknown>
-  clearInterval(scope[TIMER_KEY] as ReturnType<typeof setInterval> | undefined)
-  scope[TIMER_KEY] = setInterval(() => $.ui.invalidate('ui.render'), ANIMATION_MS)
-}
+type ClockHost = { ui: { invalidate: (event: 'ui.render') => void }; agent: { list: () => Promise<readonly { status: string }[]> } }
+
+const wakeAnimation = ($: ClockHost) =>
+  wakeClock(() => $.ui.invalidate('ui.render'), async () => (await $.agent.list()).some(({ status }) => isLive(status)))
 
 const loadKnowledge = async ($: Parameters<typeof update>[0]) => ((await $.store.get(STORE_KEY)) as Entry[] | undefined) ?? []
 
@@ -167,15 +177,9 @@ const learn = async ($: Parameters<typeof update>[0], goal: string, report: stri
 
 type BriefHost = Completer & Parameters<typeof update>[0]
 
-const completeBrief = async ($: Completer, text: string) => {
-  const reply = await $.model.complete({ model: 'haiku', prompt: BRIEF_PROMPT + text, effort: 'low', maxTokens: BRIEF_MAX_TOKENS })
-  return reply.isAnswered ? reply.text?.trim() : undefined
-}
-
 const buildBrief = async ($: BriefHost, text: string) => {
-  const leads = rank(await loadKnowledge($), text, BRIEF_MAX_HITS).map(snippet)
-  const body = leads.length ? leads.join('\n\n') : isVague(text) ? await completeBrief($, text) : undefined
-  return body ? `${BRIEF_HEADER}\n${body}` : undefined
+  const leads = rank(await loadKnowledge($), text, BRIEF_MAX_HITS).map(({ key }) => `- ${briefTitle(key)}`)
+  return leads.length ? `${BRIEF_HEADER}\n${leads.join('\n')}` : undefined
 }
 
 type Submission = { text: string; turnId?: string; origin: { kind: string } }
@@ -239,7 +243,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'agent-graph', description: 'Show running agents with tokens and estimated cost', argumentHint: '[brief|mode|compact|flow on|off]' })
     void $.ui.open({ id: PANE, title: 'Agents' })
-    startAnimationClock($)
+    wakeAnimation($)
     resetImageReads()
     await restoreState($).catch(() => undefined)
     await $.tool.register(REMEMBER_TOOL)
@@ -269,6 +273,7 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const agent = e.agentId ?? MAIN
+    wakeAnimation($)
     const activity = describeCall(e as Record<string, unknown>)
     void update($, activityByAgent, all => ({ ...all, [agent]: activity }))
     if (e.tool === 'TodoWrite' && e.todos.length) {
@@ -347,12 +352,19 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) void update($, mainFinishedAtom, () => false)
+    if (!e.agentId) {
+      mainTurn.busy = true
+      void update($, mainFinishedAtom, () => false)
+    }
+    wakeAnimation($)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId) void update($, mainFinishedAtom, () => true)
+    if (!e.agentId) {
+      mainTurn.busy = false
+      void update($, mainFinishedAtom, () => true)
+    }
     void persistState($).catch(() => undefined)
     return next(e)
   })
@@ -361,7 +373,7 @@ export const register: Register = on => {
     const plan = (await flowEnabled($, e)) ? await withTimeout(planRequest($, e.text), FLOW_TIMEOUT_MS).catch(() => undefined) : undefined
     if (!e.text.startsWith('/')) {
       if (plan?.goal) void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(plan.goal as string) }))
-      else void setGoal($, MAIN, e.text)
+      else void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
       void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
     }
