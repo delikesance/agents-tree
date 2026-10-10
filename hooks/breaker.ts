@@ -7,7 +7,7 @@ export const BREAKER_DENY = 'Échec répété de ce même appel: change d\'appro
 export const BREAKER_WINDOW_CALLS = 20
 export const failures = new Map<string, string[]>()
 const lastFailureCall = new Map<string, number>()
-const history = { calls: 0, lastKey: '' }
+const history = { calls: 0 }
 
 export const startCall = () => {
   history.calls += 1
@@ -20,15 +20,21 @@ export const recordFailure = (key: string, output: string) => {
   const attempts = [...(failures.get(key) ?? []), output]
   failures.set(key, attempts)
   evictOldest(failures)
-  history.lastKey = key
   return attempts
 }
 
 export const recordSuccess = (key: string) => {
-  if (history.lastKey !== key) failures.delete(key)
-  history.lastKey = key
+  failures.delete(key)
+  stopped.delete(key)
 }
 export const stopped = new Set<string>()
+
+export const resetBreaker = () => {
+  failures.clear()
+  lastFailureCall.clear()
+  stopped.clear()
+  history.calls = 0
+}
 const BREAKER_MAX_KEYS = 500
 
 export const evictOldest = (keys: { size: number; keys(): IterableIterator<string>; delete(key: string): boolean }) => {
