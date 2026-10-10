@@ -59,11 +59,11 @@ export const clip = (text: string) => (text.length > SNIPPET_CHARS ? `${text.sli
 export const snippet = (entry: Entry) =>
   `[${entry.key}] ${entry.tags.join(',')} (${new Date(entry.at).toISOString().slice(0, 10)})\n${clip(entry.text)}`
 
-export const rank = (entries: Entry[], query: string, limit: number) => {
+export const rank = (entries: Entry[], query: string, limit: number, minPoints = 1) => {
   const queryTokens = tokenize(query)
   return entries
     .map(entry => ({ entry, points: score(entry, queryTokens) }))
-    .filter(hit => hit.points > 0)
+    .filter(hit => hit.points >= minPoints)
     .sort((a, b) => b.points - a.points || b.entry.at - a.entry.at)
     .slice(0, limit)
     .map(hit => hit.entry)
@@ -81,3 +81,19 @@ export const upsert = (entries: Entry[], entry: Entry) => {
 }
 export const SECRET_PATTERN = /\b(sk-[\w-]{16,}|gh[pousr]_\w{20,}|AKIA\w{12,})\b|\b(api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi
 export const SECRET_MASK = '[masqué]'
+
+let memories: Entry[] = []
+export const hydrateMemories = (entries: Entry[]) => {
+  memories = entries
+}
+export const currentMemories = () => memories
+
+export function rememberOutcome(key: string, text: string, tags: string[]) {
+  memories = upsert(memories, {
+    key: key.slice(0, LEARNED_KEY_CHARS),
+    text: clip(text.replace(SECRET_PATTERN, SECRET_MASK)),
+    tags: [...new Set(tags.flatMap(tokenize))].slice(0, MAX_LEARNED_TAGS),
+    at: Date.now(),
+    learned: true,
+  })
+}
