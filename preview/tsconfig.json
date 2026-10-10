@@ -1,0 +1,1 @@
+{ "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "./jsx", "baseUrl": ".", "paths": { "./jsx/jsx-runtime": ["./jsx/jsx-runtime.ts"] } } }
