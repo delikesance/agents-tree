@@ -30,7 +30,9 @@ import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, RE
 import type { Entry } from './knowledge'
 import { addUsage } from './pricing'
 import { DEDUPED_TOOLS, IMAGE_READ_DENY, WRITING_TOOLS, countImageRead, duplicateReadDeny, forgetReads, imageLimitReached, isImageRead, pendingReads, readKey, resetImageReads, settleRead } from './reads'
-import { GOAL_LABEL_PROMPT, ROUTER_MIN_PROMPT, ROUTER_PROMPT, firstLine, isQuestion, isWellBriefed, parseRoute, truncateGoal, withGoalContext, withReportLimit } from './routing'
+import { GOAL_LABEL_PROMPT, ROUTER_MIN_PROMPT, ROUTER_PROMPT, firstLine, isQuestion, isWellBriefed, parseRoute, truncateGoal, withGoalContext, withMapPointer, withReportLimit } from './routing'
+import { takeMapNote } from './mapEnsure'
+import { ensureProjectMap, projectMapExists } from './mapHost'
 import type { Route } from './routing'
 import { makePanel } from './panel'
 import { firstPrompt, relayTarget, threadLines } from './threadLines'
@@ -396,6 +398,8 @@ export const register: Register = on => {
     const flowWanted = await flowEnabled($, e)
     const modeAsked = await modeWanted($, e)
     const earlierFlow = isCommand ? undefined : takeFlow()
+    const mapNote = isCommand ? undefined : takeMapNote()
+    if (!isCommand) void ensureProjectMap($, projectDir.cwd).catch(() => undefined)
     if (!isCommand) {
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
@@ -404,7 +408,7 @@ export const register: Register = on => {
     if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
-    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
+    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, onlyIfChanged(session, 'map', mapNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
     void recordPrompt({ read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text) }, { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
@@ -414,7 +418,8 @@ export const register: Register = on => {
     const declared = await declaredModel(path => $.fs.read(path), [projectDir.cwd, await $.env.get('HOME')], e.subagentType).catch(() => undefined)
     const injected = route ? modelToInject(e.model, declared, route.model) : undefined
     const routed = route ? { ...e, prompt: route.prompt, ...(injected ? { model: injected } : {}) } : e
-    const result = await next({ ...routed, prompt: withReportLimit(routed.prompt) })
+    const mapExists = await projectMapExists($, projectDir.cwd)
+    const result = await next({ ...routed, prompt: withMapPointer(withReportLimit(routed.prompt), mapExists) })
     if (result.agentId) {
       const { agentId } = result
       const model = result.model ?? injected ?? declared
