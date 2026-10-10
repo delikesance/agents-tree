@@ -4,9 +4,9 @@ import type { AgentInfo } from 'claude-code'
 import { cardHeight } from './cardHeight'
 import { dismissAgent, isDismissed } from './select'
 import { buildTree, flatten, rememberAgents, trackLifecycle, visibleAgents } from './tree'
-import type { Node, Row } from './tree'
+import type { Node, Row, TrackedAgent } from './tree'
 
-const agent = (id: string, status: AgentInfo['status']) => ({ id, status, type: 'explorer' }) as AgentInfo
+const agent = (id: string, status: string) => ({ id, status, type: 'explorer' }) as TrackedAgent
 
 test('an agent the host stops listing stays one round, marked gone', () => {
   rememberAgents([agent('a', 'running')])
@@ -22,9 +22,9 @@ test('a nested agent sits under its parent with its own type and a launcher', ()
   const agents = [{ ...agent('p', 'running'), type: 'worker' }, { ...agent('c', 'running'), parentId: 'p' }] as AgentInfo[]
   const rows = flatten(buildTree(agents, {}, {}, {}, {}, {}, {}, false, 0))
   expect(rows.map(({ depth }) => depth)).toEqual([0, 1, 2])
-  expect(rows[2].node.label).toContain('explorer')
-  expect(rows[2].node.launchedBy).toBe(rows[1].node.label)
-  expect(rows[2].last).toBe(true)
+  expect(rows[2]?.node.label).toContain('explorer')
+  expect(rows[2]?.node.launchedBy).toBe(rows[1]?.node.label)
+  expect(rows[2]?.last).toBe(true)
 })
 
 const row = (node: Partial<Node> & { id: string }, depth: number): Row => ({ node: { label: node.id, status: 'completed', reveal: 1, children: [], ...node }, depth, last: true, ancestorsLast: [] })
@@ -39,7 +39,7 @@ test('visibleAgents keeps live agents and their ancestors before finished ones',
 
 test('visibleAgents fills spare space with finished agents, newest first', () => {
   const rows = [mainRow, row({ id: 'new' }, 1), row({ id: 'older' }, 1)]
-  const { shown, hidden } = visibleAgents(rows, 2 * cardHeight(rows[0].node, true))
+  const { shown, hidden } = visibleAgents(rows, 2 * cardHeight(mainRow.node, true))
   expect(shown.map(({ node }) => node.id)).toEqual(['main', 'new'])
   expect(hidden).toBe(1)
 })
@@ -66,5 +66,5 @@ test('a purged gone agent forgets its dismissal and lifecycle', () => {
 
 test('a child of main has no launcher', () => {
   const rows = flatten(buildTree([agent('m', 'running')], {}, {}, {}, {}, {}, {}, false, 0))
-  expect(rows[1].node.launchedBy).toBeUndefined()
+  expect(rows[1]?.node.launchedBy).toBeUndefined()
 })
