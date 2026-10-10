@@ -8,7 +8,7 @@ export const MODEL_CRITERIA = {
 }
 export type JevHost = {
   env: { get: (name: string) => Promise<string | undefined> }
-  http: { fetch: (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; text: string }> }
+  http: { fetch: (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; text: string }> }
 }
 
 export type JevChoice = { choice?: string; note: string }
