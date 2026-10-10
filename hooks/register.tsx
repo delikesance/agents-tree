@@ -37,7 +37,7 @@ import { makeThread } from './thread'
 import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
-import { MAIN, buildTree, flatten, isLive, rememberAgents, trackLifecycle, visibleAgents } from './tree'
+import { MAIN, buildTree, flatten, isLive, rememberAgents, needsCompact, trackLifecycle, visibleAgents } from './tree'
 import { mainTurn, wakeClock } from './clock'
 
 const usageByAgent = atom({ plugin: 'agent-graph', key: 'usage' } as const, {} as Record<string, AgentUsage>)
@@ -161,7 +161,6 @@ const setGoal = async ($: Completer & Parameters<typeof update>[0], agent: strin
 }
 
 
-const ROWS_FALLBACK_PER_AGENT = 6
 const DEFAULT_COLS = 60
 
 type ClockHost = { ui: { invalidate: (event: 'ui.render') => void }; agent: { list: () => Promise<readonly { status: string }[]> } }
@@ -442,7 +441,9 @@ export const register: Register = on => {
     const agents = rememberAgents(await $.agent.list())
     trackLifecycle(agents, now)
     const root = buildTree(agents, usage, activity, goals, progress, todos, models, await read($, mainFinishedAtom), now)
-    const { shown: rows, hidden } = visibleAgents(flatten(root), Math.max(1, Math.floor(((e.viewport?.rows ?? 24) - ROW_CHROME) / ROWS_FALLBACK_PER_AGENT)))
+    const allRows = flatten(root)
+    const maxRows = Math.max(1, (e.viewport?.rows ?? 24) - ROW_CHROME)
+    const { shown: rows, hidden } = visibleAgents(allRows, maxRows)
     const session = await $.session.usage({ breakdown: 'summary' })
     const quotas = mostUrgent(rateBars(session.rateLimits))
     const { breakdown } = session.context
@@ -486,7 +487,7 @@ export const register: Register = on => {
           {quotas.map(quota => <Quota {...quota} />)}
         </Section>
         <Section title="AGENTS" icon={ICONS.agents}>
-          {rows.map(({ node, depth, last }) => <AgentCard node={node} depth={depth} last={last} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
+          {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} compact={needsCompact(allRows, maxRows)} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
       </Box>
