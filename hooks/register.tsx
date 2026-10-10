@@ -10,6 +10,7 @@ import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailu
 import { stashFlow, takeFlow } from './backgroundFlow'
 import { BRIEF_KEY, BRIEF_TIMEOUT_MS, memoryBrief, withTimeout } from './brief'
 import { AUTO_COMPACT_KEEP, AUTO_COMPACT_KEY, AUTO_COMPACT_TOKENS, autoCompactState, contextNudge, resetNudge } from './compact'
+import { declaredModel, modelToInject } from './declaredModel'
 import { FLOW_KEY, FLOW_MAX_TOKENS, FLOW_PROMPT, FLOW_TIMEOUT_MS, looksMultiStep, parsePlan, planInput, recentContext } from './flow'
 import type { Plan } from './flow'
 import { runFlow } from './flowRun'
@@ -410,11 +411,13 @@ export const register: Register = on => {
 
   on('agent.spawn', async ($, e, next) => {
     const route = await routeSpawn($, e.prompt).catch(() => undefined)
-    const routed = route ? { ...e, prompt: route.prompt, ...(e.model ? {} : { model: route.model }) } : e
+    const declared = await declaredModel(path => $.fs.read(path), [projectDir.cwd, await $.env.get('HOME')], e.subagentType).catch(() => undefined)
+    const injected = route ? modelToInject(e.model, declared, route.model) : undefined
+    const routed = route ? { ...e, prompt: route.prompt, ...(injected ? { model: injected } : {}) } : e
     const result = await next({ ...routed, prompt: withReportLimit(routed.prompt) })
     if (result.agentId) {
       const { agentId } = result
-      const model = result.model ?? route?.model
+      const model = result.model ?? injected ?? declared
       if (model) void update($, modelByAgent, all => ({ ...all, [agentId]: model }))
       if (route) void update($, routeSourceByAgent, all => ({ ...all, [agentId]: route.source }))
       void setGoal($, agentId, route?.prompt ?? e.prompt).catch(() => undefined)
