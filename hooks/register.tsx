@@ -59,7 +59,7 @@ const mainFinishedAtom = atom({ plugin: 'agent-graph', key: 'mainFinished' } as 
 
 type StateHost = StateDollar & Pick<CoreEngineInterface, 'store' | 'session'>
 
-const storeOf =($: StateHost) => ({ get: (key: string) => $.store.get(key), set: (key: string, value: unknown) => $.store.set(key, value) })
+const storeOf = ($: StateHost) => ({ get: (key: string) => $.store.get(key), set: (key: string, value: unknown) => $.store.set(key, value) })
 
 const persistState = async ($: StateHost) =>
   saveSnapshot(storeOf($), await $.session.id(), {
