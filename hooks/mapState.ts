@@ -20,6 +20,6 @@ export const mapStatus = async ({ run, read, exists }: MapReader, head: string):
   const written = text === undefined ? undefined : writtenCommit(text)
   if (!written) return 'manual'
   if (written === head) return 'fresh'
-  const diff = await run(['git', 'diff', '--name-status', '-M', '--diff-filter=ADR', written, head])
+  const diff = await run(['git', 'diff', '--relative', '--name-status', '-M', '--diff-filter=ADR', written, head])
   return diff.exitCode !== 0 || changesStructure(diff.stdout) ? 'stale' : 'fresh'
 }

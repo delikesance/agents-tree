@@ -1,6 +1,6 @@
 import { withTimeout } from './brief'
 import { MAP_FILE } from './mapState'
-import type { MapReader } from './mapState'
+import type { MapReader, Run } from './mapState'
 import { SUMMARY_PROMPT, buildMap, parseSummaries, summaryInput, topDirectories } from './mapSkeleton'
 import { detectTestCommand } from './testCommand'
 
