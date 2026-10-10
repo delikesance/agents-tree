@@ -45,14 +45,20 @@ test('an added, deleted or renamed file makes the map stale', async () => {
   expect(await mapStatus(reader(diff('R100\told.ts\tnew.ts\n'), text), HEAD)).toBe('stale')
 })
 
-test('the diff is limited to the working directory like git ls-files', async () => {
+test('the diff between the written commit and HEAD is limited to the working directory', async () => {
   const argvs: string[][] = []
   const run: Run = async argv => {
     argvs.push(argv)
     return { exitCode: 0, stdout: '' }
   }
   await mapStatus(reader(run, `<!-- map: ${WRITTEN} -->\n`), HEAD)
-  expect(argvs[0]).toContain('--relative')
+  expect(argvs).toEqual([['git', 'diff', '--relative', '--name-status', '-M', '--diff-filter=ADR', WRITTEN, HEAD]])
+})
+
+test('with working-directory-relative paths only the map itself is ignored', async () => {
+  const text = `<!-- map: ${WRITTEN} -->\n`
+  expect(await mapStatus(reader(diff(`A\t${MAP_FILE}\nA\tsrc/new.ts\n`), text), HEAD)).toBe('stale')
+  expect(await mapStatus(reader(diff(`A\tsub/${MAP_FILE}\n`), text), HEAD)).toBe('stale')
 })
 
 test('a failing git diff makes the map stale', async () => {
