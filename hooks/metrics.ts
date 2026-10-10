@@ -1,15 +1,14 @@
-import { appendFileSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+export type MetricsFs = { read: (path: string) => Promise<string>; write: (path: string, text: string) => Promise<void> }
 
 export type PromptMetrics = { hookLatencyMs: number; injectedChars: number; modelCalls: number }
 
-export const metricsPath = (cwd = process.cwd()) => join(cwd, '.claudework', 'metrics', 'prompts.jsonl')
+export const metricsPath = (cwd: string) => `${cwd}/.claudework/metrics/prompts.jsonl`
 
-export function recordPrompt(metrics: PromptMetrics, cwd = process.cwd()): void {
+export async function recordPrompt(fs: MetricsFs, metrics: PromptMetrics, cwd: string): Promise<void> {
   const path = metricsPath(cwd)
   try {
-    mkdirSync(dirname(path), { recursive: true })
-    appendFileSync(path, JSON.stringify({ ts: Date.now(), ...metrics }) + '\n')
+    const previous = await fs.read(path).catch(() => '')
+    await fs.write(path, previous + JSON.stringify({ ts: Date.now(), ...metrics }) + '\n')
   } catch {}
 }
 
