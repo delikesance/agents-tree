@@ -135,3 +135,16 @@ export const directive = (spawned: Feature[], rest: Feature[], decision: FlowDec
   const cost = `~$${decision.parallelCost.toFixed(2)} en agents contre ~$${decision.inlineCost.toFixed(2)} en séquence, ~${Math.round(decision.secondsSaved / 60)} min gagnées`
   return `${FLOW_HEADER}\n${lines.join('\n')}${remaining}\nSuis l'avancement avec TodoWrite, puis relis et vérifie leurs rapports. (${cost})`
 }
+
+const MULTI_STEP_MIN_CHARS = 150
+const MULTI_STEP_FILES = 2
+const MULTI_STEP_LIST_ITEMS = 2
+const FILE_REFERENCE = /[\w./-]+\.\w{1,5}\b/g
+const LIST_ITEM = /^\s*(?:\d+[.)]|[-*])\s/gm
+const SEQUENCE_WORDS = /\b(puis|ensuite|après ça|et aussi|plusieurs fichiers|refactor\w*|migr\w+|then|also|all files|step by step)\b/i
+
+export const looksMultiStep = (text: string) =>
+  text.length >= MULTI_STEP_MIN_CHARS ||
+  (text.match(FILE_REFERENCE)?.length ?? 0) >= MULTI_STEP_FILES ||
+  (text.match(LIST_ITEM)?.length ?? 0) >= MULTI_STEP_LIST_ITEMS ||
+  SEQUENCE_WORDS.test(text)
