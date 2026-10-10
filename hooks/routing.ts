@@ -32,7 +32,7 @@ export const withReportLimit = (prompt: string) => (prompt.includes(REPORT_LIMIT
 const MAP_POINTER = `Read ${MAP_FILE} first, do not sweep the repo.`
 
 export const withMapPointer = (prompt: string, mapExists: boolean) => (mapExists && !prompt.includes(MAP_FILE) ? `${MAP_POINTER}\n\n${prompt}` : prompt)
-export const isQuestion= (line: string) => line.trim().endsWith('?')
+export const isQuestion = (line: string) => line.trim().endsWith('?')
 
 const FILE_PATH = /[\w-]+(?:\/[\w.-]+)+|[\w-]+\.\w{1,5}\b/
 

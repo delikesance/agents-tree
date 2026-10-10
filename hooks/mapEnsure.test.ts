@@ -7,9 +7,9 @@ import { MAP_FILE } from './mapState'
 const HEAD = 'd'.repeat(40)
 const OLD = 'e'.repeat(40)
 
-type Repo = { head?: string; files?: string[]; changed?: string; map?: string; summary?: string | Error }
+type Repo = { unreadable?: boolean; head?: string; files?: string[]; changed?: string; map?: string; summary?: string | Error }
 
-const setup = ({ head = HEAD, files = ['src/main.ts', 'src/a.ts'], changed = '', map, summary = 'src: code' }: Repo) => {
+const setup = ({ unreadable = false, head = HEAD, files = ['src/main.ts', 'src/a.ts'], changed = '', map, summary = 'src: code' }: Repo) => {
   const written: string[] = []
   let completions = 0
   const io: MapIo = {
@@ -18,6 +18,7 @@ const setup = ({ head = HEAD, files = ['src/main.ts', 'src/a.ts'], changed = '',
       if (argv[1] === 'ls-files') return { exitCode: 0, stdout: files.join('\0') + '\0' }
       return { exitCode: 0, stdout: changed }
     },
+    exists: async () => unreadable || map !== undefined,
     read: async path => (path === MAP_FILE && map !== undefined ? map : Promise.reject(new Error('absent'))),
     write: async (_path, text) => void written.push(text),
     complete: async () => {
@@ -63,6 +64,12 @@ test('a structural change regenerates the map', async () => {
 test('a map without commit line is never overwritten', async () => {
   const { io, written } = setup({ map: '# my own map\n', changed: 'A\tx\n' })
   await ensureMap(io, 'manual')
+  expect(written).toHaveLength(0)
+})
+
+test('an existing map that cannot be read is never overwritten', async () => {
+  const { io, written } = setup({ unreadable: true })
+  await ensureMap(io, 'unreadable')
   expect(written).toHaveLength(0)
 })
 
