@@ -8,7 +8,7 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/
 const isPathSafe = (agentType: string) => !!agentType && !agentType.includes('/') && !agentType.includes('..')
 
 const modelOfDefinition = (text: string) => {
-  const model = FRONTMATTER.exec(text)?.[1].match(MODEL_LINE)?.[1]
+  const model = FRONTMATTER.exec(text)?.[1]?.match(MODEL_LINE)?.[1]
   return model === INHERIT ? undefined : model
 }
 
