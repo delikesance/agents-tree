@@ -25,7 +25,7 @@ import { ICONS } from './icons'
 import { MODE_CRITERIA, MODE_KEY, modeAdvice } from './mode'
 import { JEV_MIN_CONFIDENCE, JEV_TASK_MAX, JEV_URL, MODEL_CRITERIA, jevFailure } from './jev'
 import type { JevChoice, JevHost } from './jev'
-import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, REMEMBER_TOOL, SECRET_MASK, SECRET_PATTERN, STORE_KEY, clip, search, tokenize, upsert } from './knowledge'
+import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, REMEMBER_TOOL, SECRET_MASK, SECRET_PATTERN, STORE_KEY, clip, hydrateMemories, search, tokenize, upsert } from './knowledge'
 import type { Entry } from './knowledge'
 import { addUsage } from './pricing'
 import { DEDUPED_TOOLS, IMAGE_READ_DENY, WRITING_TOOLS, countImageRead, duplicateReadDeny, forgetReads, imageLimitReached, isImageRead, pendingReads, readKey, resetImageReads, settleRead } from './reads'
@@ -171,7 +171,11 @@ const wakeAnimation = ($: ClockHost) =>
 
 const loadKnowledge = async ($: Parameters<typeof update>[0]) => ((await $.store.get(STORE_KEY)) as Entry[] | undefined) ?? []
 
-const saveEntry = async ($: Parameters<typeof update>[0], entry: Entry) => $.store.set(STORE_KEY, upsert(await loadKnowledge($), entry))
+const saveEntry = async ($: Parameters<typeof update>[0], entry: Entry) => {
+  const entries = upsert(await loadKnowledge($), entry)
+  hydrateMemories(entries)
+  await $.store.set(STORE_KEY, entries)
+}
 
 const COMPACTION_LABEL = 'compaction'
 
@@ -256,6 +260,7 @@ export const register: Register = on => {
     wakeAnimation($)
     resetImageReads()
     await restoreState($).catch(() => undefined)
+    hydrateMemories(await loadKnowledge($))
     await $.tool.register(REMEMBER_TOOL)
     await $.tool.register(RECALL_TOOL)
     await $.tool.register(PROGRESS_TOOL)
