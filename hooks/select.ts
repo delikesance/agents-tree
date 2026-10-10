@@ -8,3 +8,4 @@ export const selectAgent = (id: string | undefined) => {
 const dismissed = new Set<string>()
 export const dismissAgent = (id: string) => void dismissed.add(id)
 export const isDismissed = (id: string) => dismissed.has(id)
+export const forgetDismissed = (id: string) => void dismissed.delete(id)
