@@ -10,10 +10,12 @@ export const isLive = (status: string) => status === 'running' || status === 'wa
 
 export type Node = { id: string; label: string; status: string; usage?: AgentUsage; activity?: string; model?: string; goal?: string; progress?: GoalProgress; todos?: Todo[]; elapsed?: number; reveal: number; finished?: boolean; launchedBy?: string; children: Node[] }
 
+export type TrackedAgent = Omit<AgentInfo, 'status'> & { status: string }
+
 type Lifecycle = { startedAt: number; endedAt?: number }
 const lifecycle = new Map<string, Lifecycle>()
 
-export const trackLifecycle = (agents: readonly AgentInfo[], now: number) => {
+export const trackLifecycle = (agents: readonly TrackedAgent[], now: number) => {
   if (!lifecycle.has(MAIN)) lifecycle.set(MAIN, { startedAt: now })
   agents.forEach(({ id, status }) => {
     const record = lifecycle.get(id) ?? { startedAt: now, endedAt: isLive(status) ? undefined : 0 }
@@ -23,9 +25,9 @@ export const trackLifecycle = (agents: readonly AgentInfo[], now: number) => {
 }
 
 const GONE = 'gone'
-const seen = new Map<string, AgentInfo>()
+const seen = new Map<string, TrackedAgent>()
 
-export const rememberAgents = (agents: readonly AgentInfo[]): AgentInfo[] => {
+export const rememberAgents = (agents: readonly TrackedAgent[]): TrackedAgent[] => {
   const current = new Set(agents.map(({ id }) => id))
   seen.forEach((agent, id) => {
     if (current.has(id) || agent.status !== GONE) return
@@ -46,7 +48,7 @@ const elapsedOf = (id: string, now: number) => {
 
 const revealOf = (id: string) => (isDismissed(id) ? 0 : 1)
 
-export const buildTree = (agents: readonly AgentInfo[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number): Node => {
+export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number): Node => {
   const nodes = new Map<string, Node>(
     agents.map(a => [a.id, { id: a.id, label: `${agentName(a.id)} · ${a.type}`, status: a.status, usage: usage[a.id], model: usage[a.id]?.model ?? models[a.id], activity: activity[a.id], goal: goals[a.id], progress: progress[a.id], todos: todos[a.id], elapsed: elapsedOf(a.id, now), reveal: revealOf(a.id), children: [] }]),
   )
@@ -86,15 +88,19 @@ export function visibleAgents<T extends Row>(nodes: readonly T[], maxRows: numbe
   const parents = parentIndexes(nodes)
   const kept = new Set<number>()
   let used = 0
+  const heightAt = (index: number) => {
+    const row = nodes[index]
+    return row ? cardHeight(row.node, compact) : 0
+  }
   const keep = (index: number) => {
-    for (let i = index; i >= 0 && !kept.has(i); i = parents[i]) {
+    for (let i = index; i >= 0 && !kept.has(i); i = parents[i] ?? -1) {
       kept.add(i)
-      used += cardHeight(nodes[i].node, compact)
+      used += heightAt(i)
     }
   }
   const costOf = (index: number) => {
     let cost = 0
-    for (let i = index; i >= 0 && !kept.has(i); i = parents[i]) cost += cardHeight(nodes[i].node, compact)
+    for (let i = index; i >= 0 && !kept.has(i); i = parents[i] ?? -1) cost += heightAt(i)
     return cost
   }
   nodes.forEach((row, index) => isActive(row) && keep(index))

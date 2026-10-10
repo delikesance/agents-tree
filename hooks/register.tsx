@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { CoreEngineInterface, Register, StateDollar } from 'claude-code'
 
 import type { AgentUsage, GoalProgress } from '../types'
 
@@ -57,9 +57,11 @@ const trimmedTokens = atom({ plugin: 'agent-graph', key: 'trimmed' } as const, 0
 
 const mainFinishedAtom = atom({ plugin: 'agent-graph', key: 'mainFinished' } as const, false)
 
-const storeOf = ($: Parameters<typeof update>[0]) => ({ get: (key: string) => $.store.get(key), set: (key: string, value: unknown) => $.store.set(key, value) })
+type StateHost = StateDollar & Pick<CoreEngineInterface, 'store' | 'session'>
 
-const persistState = async ($: Parameters<typeof update>[0]) =>
+const storeOf =($: StateHost) => ({ get: (key: string) => $.store.get(key), set: (key: string, value: unknown) => $.store.set(key, value) })
+
+const persistState = async ($: StateHost) =>
   saveSnapshot(storeOf($), await $.session.id(), {
     usage: await read($, usageByAgent),
     models: await read($, modelByAgent),
@@ -71,7 +73,7 @@ const persistState = async ($: Parameters<typeof update>[0]) =>
     mainFinished: await read($, mainFinishedAtom),
   })
 
-const restoreState = async ($: Parameters<typeof update>[0]) => {
+const restoreState = async ($: StateHost) => {
   if (Object.keys(await read($, usageByAgent)).length) return
   const snapshot = await loadSnapshot(storeOf($), await $.session.id())
   if (!snapshot) return
@@ -156,7 +158,7 @@ const noteFailure = async ($: JevHost, key: string, output: string) => {
   evictOldest(stopped)
 }
 
-const setGoal = async ($: Completer & Parameters<typeof update>[0], agent: string, request: string) => {
+const setGoal = async ($: Completer & StateHost, agent: string, request: string) => {
   const context = (await read($, goalByAgent))[MAIN]
   update($, goalByAgent, all => ({ ...all, [agent]: all[agent] ?? truncateGoal(firstLine(request)) })).catch(() => undefined)
   const goal = await summarizeRequest($, request, context)
@@ -171,9 +173,9 @@ type ClockHost = { ui: { invalidate: (event: 'ui.render') => void }; agent: { li
 const wakeAnimation = ($: ClockHost) =>
   wakeClock(() => $.ui.invalidate('ui.render'), async () => (await $.agent.list()).some(({ status }) => isLive(status)))
 
-const loadKnowledge = async ($: Parameters<typeof update>[0]) => ((await $.store.get(STORE_KEY)) as Entry[] | undefined) ?? []
+const loadKnowledge = async ($: StateHost) => ((await $.store.get(STORE_KEY)) as Entry[] | undefined) ?? []
 
-const saveEntry = async ($: Parameters<typeof update>[0], entry: Entry) => {
+const saveEntry = async ($: StateHost, entry: Entry) => {
   const entries = upsert(await loadKnowledge($), entry)
   hydrateMemories(entries)
   await $.store.set(STORE_KEY, entries)
@@ -181,13 +183,13 @@ const saveEntry = async ($: Parameters<typeof update>[0], entry: Entry) => {
 
 const COMPACTION_LABEL = 'compaction'
 
-const learn = async ($: Parameters<typeof update>[0], goal: string, report: string | undefined) => {
+const learn = async ($: StateHost, goal: string, report: string | undefined) => {
   if (!report) return
   const tags = [...new Set(tokenize(goal))].slice(0, MAX_LEARNED_TAGS)
   await saveEntry($, { key: goal.slice(0, LEARNED_KEY_CHARS), text: clip(report.replace(SECRET_PATTERN, SECRET_MASK)), tags, at: Date.now(), learned: true })
 }
 
-type BriefHost = Completer & Parameters<typeof update>[0]
+type BriefHost = Completer & StateHost
 
 const buildBrief = (text: string) => memoryBrief(relevantMemories(text))
 
@@ -206,7 +208,7 @@ const modeFor = async ($: BriefHost & JevHost, e: Submission) => {
   return modeAdvice(verdict.choice)
 }
 
-type PlanHost = Completer & Parameters<typeof update>[0] & { session: { messages: () => Promise<unknown> } }
+type PlanHost = Completer & StateHost & { session: { messages: () => Promise<unknown> } }
 
 const mainContext = { tokens: 0 }
 
@@ -224,7 +226,7 @@ const planRequest = async ($: PlanHost, request: string): Promise<Plan> => {
   return reply.isAnswered && reply.text ? parsePlan(reply.text) : { features: [] }
 }
 
-const mainState = async ($: Parameters<typeof update>[0]) => {
+const mainState = async ($: StateHost) => {
   const usage = (await read($, usageByAgent))[MAIN]
   return { tokens: mainContext.tokens, model: usage?.model, cacheHitRate: usage ? cacheHitRate(usage) : 0 }
 }
@@ -238,7 +240,7 @@ const startFlow = async ($: PlanHost, actions: FlowActions, e: Submission) => {
 
 const flowEnabled = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && looksMultiStep(e.text) && !!(await $.store.get(FLOW_KEY))
 
-const autoCompact = async ($: Parameters<typeof update>[0] & { session: { compact: (args: { instructions: string }) => Promise<unknown> } }, tokens: number) => {
+const autoCompact = async ($: StateHost & { session: { compact: (args: { instructions: string }) => Promise<unknown> } }, tokens: number) => {
   if (tokens < AUTO_COMPACT_TOKENS) autoCompactState.armed = true
   const due = autoCompactState.armed && tokens >= AUTO_COMPACT_TOKENS && (await read($, mainFinishedAtom)) && !!(await $.store.get(AUTO_COMPACT_KEY))
   if (!due) return
@@ -277,7 +279,7 @@ export const register: Register = on => {
   on('command.run', { command: 'agent-graph' }, async ($, e) => {
     const [subcommand, rawValue] = e.args.trim().split(/\s+/)
     const value = rawValue?.toLowerCase()
-    const toggle = SWITCHES.get(subcommand)
+    const toggle = SWITCHES.get(subcommand ?? '')
     if (toggle && (value === 'on' || value === 'off')) {
       await $.store.set(toggle.key, value === 'on')
       return { text: `${toggle.label} ${value === 'on' ? 'activé' : 'désactivé'}.` }
@@ -329,7 +331,7 @@ export const register: Register = on => {
       if (block.type !== 'tool_result') return block
       let saved = 0
       const trimmed = { ...block, content: trimResultContent(block.content, tokens => (saved += tokens)) }
-      settleRead(block.tool_use_id, !block.is_error && !saved)
+      if (typeof block.tool_use_id === 'string') settleRead(block.tool_use_id, !block.is_error && !saved)
       savedTokens += saved
       return trimmed
     })
@@ -375,10 +377,8 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
-      mainTurn.busy = true
-      void update($, mainFinishedAtom, () => false)
-    }
+    mainTurn.busy = true
+    void update($, mainFinishedAtom, () => false)
     wakeAnimation($)
     return next(e)
   })
@@ -409,7 +409,7 @@ export const register: Register = on => {
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
     const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, onlyIfChanged(session, 'map', mapNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
-    void recordPrompt({ read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text) }, { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
+    if (projectDir.cwd) void recordPrompt({ read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text) }, { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
 
@@ -460,7 +460,7 @@ export const register: Register = on => {
     const quotas = mostUrgent(rateBars(session.rateLimits))
     const { breakdown } = session.context
     const limit = breakdown ? compactionLimit(breakdown) : session.context.window
-    const contextPercent = limit && session.context.tokens !== undefined ? clampedPercent((session.context.tokens / limit) * 100) : clampedPercent(session.context.percent)
+    const contextPercent = limit && session.context.tokens !== undefined ? clampedPercent((session.context.tokens / limit) * 100) : clampedPercent(session.context.percent ?? 0)
     const contextUsage = contextSummary({ tokens: session.context.tokens, window: limit })
     const segments = breakdown ? contextSegments(breakdown.categories, limit) : []
 

@@ -3,9 +3,10 @@ import { EXPLORE_TIMEOUT_MS, FLOW_MAX_AGENTS, agentFor, decideFlow, directive, e
 import type { Feature } from './flow'
 
 type SpawnInput = { prompt: string; description: string; subagentType: string; model: string }
+type ExploreInput = { tool: 'Agent'; subagent_type: string; model: 'haiku'; description: string; prompt: string }
 
 export type FlowActions = {
-  explore: (input: Record<string, unknown>) => Promise<{ text?: string }>
+  explore: (input: ExploreInput) => Promise<{ text?: string }>
   spawn: (input: SpawnInput) => Promise<{ deny?: string }>
 }
 
