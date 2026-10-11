@@ -5,6 +5,7 @@ import { PALETTE } from './palette'
 import { makeBadge } from './badge'
 import { ICONS } from './icons'
 import { gradient, speciesColor, spriteLines } from './sprites'
+import { cardKind } from './cardStatus'
 import { MAIN, isLive } from './tree'
 import type { Node } from './tree'
 import type { Todo } from './activity'
@@ -34,8 +35,8 @@ const STATUSES = {
   running: { label: 'en cours', mark: ICONS.running, background: PALETTE.yellow, color: PALETTE.onYellow },
   gone: { label: 'disparu', mark: ICONS.failed, background: PALETTE.rule, color: PALETTE.text },
   failed: { label: 'échec', mark: ICONS.failed, background: PALETTE.badgeRed, color: PALETTE.onBadge },
+  paused: { label: 'en attente', mark: ICONS.pending, background: PALETTE.rule, color: PALETTE.text },
 }
-const statusOf = ({ status, finished }: Node) => (status === 'gone' ? STATUSES.gone : status === 'failed' || status === 'killed' ? STATUSES.failed : isLive(status) && !finished ? STATUSES.running : STATUSES.done)
 
 const gutterMarks = (depth: number, ancestorsLast: boolean[]) =>
   Array.from({ length: depth }, (_, level) => (level === 0 || ancestorsLast[level - 1] ? ' ' : GUTTER_MARK))
@@ -81,18 +82,19 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
     </Box>
   )
 
-  const TodoList = ({ todos, settled }: { todos: Todo[]; settled: boolean }) => (
+  const TodoList = ({ todos, animated }: { todos: Todo[]; animated: boolean }) => (
     <Box flexDirection="column" marginBottom={GOAL_MARGIN_Y}>
       {todos.slice(0, TODO_MAX_LINES).map(({ content, status }) => {
-        const { mark, color } = settled ? TODO_MARKS.completed : status === 'in_progress' ? { mark: spinnerFrame(frameTime()), color: PALETTE.text } : (TODO_MARKS[status as keyof typeof TODO_MARKS] ?? TODO_MARKS.pending)
-        return <Text wrap="truncate-end" color={color}>{mark} <Text color={settled || status === 'completed' ? PALETTE.muted : PALETTE.text}>{content}</Text></Text>
+        const { mark, color } = status === 'in_progress' && animated ? { mark: spinnerFrame(frameTime()), color: PALETTE.text } : (TODO_MARKS[status as keyof typeof TODO_MARKS] ?? TODO_MARKS.pending)
+        return <Text wrap="truncate-end" color={color}>{mark} <Text color={status === 'completed' ? PALETTE.muted : PALETTE.text}>{content}</Text></Text>
       })}
     </Box>
   )
 
   const AgentCard = ({ node, depth, last, ancestorsLast = [], compact = false, route, onOpen, onDismiss }: { node: Node; depth: number; last: boolean; ancestorsLast?: boolean[]; compact?: boolean; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
-    const status = statusOf(node)
-    const done = status === STATUSES.done
+    const kind = cardKind(node)
+    const status = STATUSES[kind]
+    const done = kind === 'done'
     const lines = cardHeight(node, compact)
     return (
       <Box>
@@ -118,7 +120,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
               <Box marginY={compact ? 0 : GOAL_MARGIN_Y}>
                 <Text bold color={PALETTE.text}>{done ? ICONS.done : ICONS.goal} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text>
               </Box>
-              {!compact && !!node.todos?.length && <TodoList todos={node.todos} settled={done} />}
+              {!compact && !!node.todos?.length && <TodoList todos={node.todos} animated={kind === 'running'} />}
               <Box justifyContent="space-between" alignItems="center">
                 <Box>
                   {node.usage && (
