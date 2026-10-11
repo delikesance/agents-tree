@@ -46,7 +46,7 @@ import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
 import { MAIN, buildTree, flatten, isLive, rememberAgents, needsCompact, trackLifecycle, visibleAgents } from './tree'
-import { finishWorkflowAgent, recordWorkflowAgent, workflowAgents } from './workflowRuns'
+import { finishWorkflowAgent, recordWorkflowAgent, recordWorkflowLaunch, workflowAgents, workflowLaunches } from './workflowRuns'
 import { mainTurn, wakeClock } from './clock'
 
 const usageByAgent = atom({ plugin: 'hive', key: 'usage' } as const, {} as Record<string, AgentUsage>)
@@ -359,6 +359,7 @@ export const register: Register = on => {
       void update($, progressByAgent, all => ({ ...all, [agent]: todoProgress(e.todos) }))
       void update($, todosByAgent, all => ({ ...all, [agent]: toTodos(e.todos) }))
     }
+    if (e.tool === 'Workflow' && !e.agentId) recordWorkflowLaunch(Date.now())
     if (e.tool === 'TaskCreate') void update($, progressByAgent, all => ({ ...all, [agent]: countTask(all[agent], { total: 1 }) }))
     if (e.tool === 'TaskUpdate' && e.status === TASK_STATUS_DONE) void update($, progressByAgent, all => ({ ...all, [agent]: countTask(all[agent], { done: 1 }) }))
     if (e.tool === `${TOOL_PREFIX}remember`) return serveRemember($, e as ServedCall)
@@ -500,7 +501,7 @@ export const register: Register = on => {
     const now = Date.now()
     const agents = rememberAgents(await $.agent.list())
     trackLifecycle(agents, now)
-    const root = buildTree(agents, usage, activity, goals, progress, todos, models, await read($, mainFinishedAtom), now, workflowAgents())
+    const root = buildTree(agents, usage, activity, goals, progress, todos, models, await read($, mainFinishedAtom), now, workflowAgents(), workflowLaunches(now))
     const allRows = flatten(root)
     const maxRows = Math.max(1, (e.viewport?.rows ?? 24) - ROW_CHROME)
     const { shown: rows, hidden } = visibleAgents(allRows, maxRows)

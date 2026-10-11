@@ -58,7 +58,7 @@ const workflowGroup = (runId: string, members: Node[]): Node => {
   return { ...group, usage: sumTree(group) }
 }
 
-export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number, workflow: readonly WorkflowAgent[] = []): Node => {
+export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number, workflow: readonly WorkflowAgent[] = [], launches: readonly number[] = []): Node => {
   const nodeFor = (id: string, label: string, status: string, elapsed: number | undefined): Node => ({ id, label, status, usage: usage[id], model: usage[id]?.model ?? models[id], activity: activity[id], goal: goals[id], progress: progress[id], todos: todos[id], elapsed, reveal: revealOf(id), children: [] })
   const nodes = new Map<string, Node>(agents.map(a => [a.id, nodeFor(a.id, `${agentName(a.id)} · ${a.type}`, a.status, elapsedOf(a.id, now))]))
   const root: Node = { id: MAIN, label: 'main', status: 'running', finished: mainFinished, usage: usage[MAIN], model: usage[MAIN]?.model, activity: activity[MAIN], goal: goals[MAIN], progress: progress[MAIN], todos: todos[MAIN], elapsed: elapsedOf(MAIN, now), reveal: 1, children: [] }
@@ -70,6 +70,10 @@ export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string,
   groupByRun(workflow).forEach((members, runId) => {
     const children = members.map(m => ({ ...nodeFor(m.id, `${agentName(m.id)} · ${m.type}`, workflowStatus(m), (m.endedAt ?? now) - m.startedAt), launchedBy: workflowLabel(runId) }))
     root.children.push(workflowGroup(runId, children))
+  })
+  launches.forEach(at => {
+    const id = workflowNodeId(`starting_${at}`)
+    root.children.push({ id, label: 'workflow · démarrage', status: 'running', elapsed: now - at, reveal: revealOf(id), children: [] })
   })
   return { ...root, children: root.children.map(pruneInactive).filter((c): c is Node => !!c) }
 }
