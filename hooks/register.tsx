@@ -203,6 +203,7 @@ const buildBrief = (text: string) => memoryBrief(relevantMemories(text))
 
 type Submission = { text: string; turnId?: string; origin: { kind: string } }
 
+const isTaskNotification = (e: Submission) => e.text.startsWith('<task-notification>')
 const isComposerPrompt = (e: Submission) => !e.text.startsWith('/') && !e.turnId && e.origin.kind === 'composer'
 
 const isBriefable = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && !!(await $.store.get(BRIEF_KEY))
@@ -411,7 +412,7 @@ export const register: Register = on => {
     const earlierFlow = isCommand ? undefined : takeFlow()
     const mapNote = isCommand ? undefined : takeMapNote()
     startMapUpkeep(mapHostOf($), projectDir.cwd, isCommand)
-    if (!isCommand) {
+    if (!isCommand && !isTaskNotification(e)) {
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
       void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
