@@ -128,6 +128,13 @@ export function createSkillLearning() {
         if (ledger[slug] && isLive(ledger[slug]) && deps.cwd) await removeSkill(deps.fs, deps.cwd, slug)
         return reject(ledger, slug)
       }),
+    accept: async (deps: SkillDeps, slug: string) => {
+      const { cwd } = deps
+      const record = (await load(deps))[slug]
+      if (!cwd || record?.status !== 'candidate' || promoting.has(slug)) return
+      promoting.add(slug)
+      await promote(deps, cwd, slug)
+    },
     restore: (deps: SkillDeps, slug: string) => mutate(deps, ledger => startPromotions(deps, restore(resetIdle(ledger, slug), slug))),
     revalidate: (deps: SkillDeps, slug: string) => mutate(deps, async ledger => revalidate(ledger, slug, await headCommit(deps.fs))),
   }

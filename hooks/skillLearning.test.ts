@@ -124,6 +124,15 @@ test('reject deletes the file and the same pattern never returns', async () => {
   expect(Object.keys(h.files)).toEqual(['/p/src/a.ts'])
 })
 
+test('accept promotes a candidate before the session threshold', async () => {
+  const h = harness()
+  await runSession(h, 's1')
+  const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('candidate')
+  await h.learning.accept(h.deps, slug)
+  expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
+})
+
 test('a failed synthesis keeps the candidate and retries later', async () => {
   const h = harness()
   const run = h.deps.fs.run
