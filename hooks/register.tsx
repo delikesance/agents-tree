@@ -452,8 +452,8 @@ export const register: Register = on => {
     if (!isCommand && !isTaskNotification(e)) {
       void learning.onPrompt(skillsOf($), e.text)
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
-      void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
-      void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
+      void update($, progressByAgent, ({ [MAIN]: previous, ...others }) => (previous && previous.done < previous.total ? { ...others, [MAIN]: previous } : others))
+      void update($, todosByAgent, ({ [MAIN]: previous, ...others }) => (previous?.some(todo => todo.status !== 'completed') ? { ...others, [MAIN]: previous } : others))
     }
     if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
