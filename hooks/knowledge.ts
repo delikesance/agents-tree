@@ -7,8 +7,8 @@ const SNIPPET_CHARS = 280
 const TAG_WEIGHT = 3
 const MIN_TOKEN_LENGTH = 3
 export const KNOWLEDGE_SECTION = {
-  id: 'agent-graph:knowledge',
-  text: 'Knowledge cache: mcp__agent-graph__recall searches saved findings by keywords. After finding where something lives or how a problem was solved, call mcp__agent-graph__remember with a short factual entry (paths, symbols, conclusion).',
+  id: 'hive:knowledge',
+  text: 'Knowledge cache: mcp__hive__recall searches saved findings by keywords. After finding where something lives or how a problem was solved, call mcp__hive__remember with a short factual entry (paths, symbols, conclusion).',
   scope: 'session',
 } as const
 export type Entry = { key: string; tags: string[]; text: string; at: number; learned?: true }

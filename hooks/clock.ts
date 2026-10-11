@@ -1,7 +1,7 @@
 export const CLOCK_MS = 500
 export const SPINNER_MS = CLOCK_MS
 const STILL_NOW = 2700
-const TIMER_KEY = '__agentGraphTimer'
+const TIMER_KEY = '__hiveTimer'
 
 type Timer = ReturnType<typeof setTimeout>
 const scope = globalThis as Record<string, unknown>

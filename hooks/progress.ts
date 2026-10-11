@@ -1,6 +1,6 @@
 export const PROGRESS_SECTION = {
-  id: 'agent-graph:progress',
-  text: 'Progress bar (mandatory): for any task of 3 or more steps, and whenever you have no task-list tool (TodoWrite/TaskCreate), call mcp__agent-graph__progress with {done: 0, total, steps} where steps lists every step as a short label, in the same message as your first working tool calls; update it (same steps) when a step finishes, always batched with the next tool calls and never as a turn of its own. Load it with ToolSearch if it is deferred.',
+  id: 'hive:progress',
+  text: 'Progress bar (mandatory): for any task of 3 or more steps, and whenever you have no task-list tool (TodoWrite/TaskCreate), call mcp__hive__progress with {done: 0, total, steps} where steps lists every step as a short label, in the same message as your first working tool calls; update it (same steps) when a step finishes, always batched with the next tool calls and never as a turn of its own. Load it with ToolSearch if it is deferred.',
   scope: 'session',
 } as const
 
