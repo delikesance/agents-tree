@@ -5,16 +5,21 @@ import { promotionPatch } from './skillPromotion'
 import { MAX_ACTIVE_SKILLS, type SkillLedger, type SkillRecord } from './skillTypes'
 
 const SOURCES = ['CLAUDE.md', 'README.md']
+const PERMANENT_CONTEXT = ['CLAUDE.md', 'AGENTS.md', '.claude/project-map.md']
 
 const groundedIn = async (deps: SkillDeps, cwd: string, candidate: DiscoveryCandidate): Promise<DiscoveryCandidate> => {
   const found = await Promise.all(candidate.files.map(async file => ((await deps.fs.read(`${cwd}/${file}`).catch(() => undefined)) === undefined ? undefined : file)))
   return { ...candidate, files: found.filter((file): file is string => !!file) }
 }
 
+const readAll = (deps: SkillDeps, cwd: string, sources: string[]) =>
+  Promise.all(sources.map(source => deps.fs.read(`${cwd}/${source}`).catch(() => undefined)))
+
 export async function discoverVerdicts(deps: SkillDeps, cwd: string, ledger: SkillLedger): Promise<Verdict[]> {
-  const texts = await Promise.all(SOURCES.map(source => deps.fs.read(`${cwd}/${source}`).catch(() => undefined)))
+  const texts = await readAll(deps, cwd, SOURCES)
+  const context = (await readAll(deps, cwd, PERMANENT_CONTEXT)).filter((text): text is string => !!text)
   const candidates = await Promise.all(texts.flatMap(text => (text ? markdownCandidates(text) : [])).map(candidate => groundedIn(deps, cwd, candidate)))
-  return candidates.map(candidate => judge(candidate, ledger))
+  return candidates.map(candidate => judge(candidate, ledger, context))
 }
 
 export const recordOf = (candidate: DiscoveryCandidate, at: number): SkillRecord => ({
@@ -43,5 +48,10 @@ export async function adoptVerdicts(deps: SkillDeps, cwd: string, ledger: SkillL
   return adopted
 }
 
+const reasonOf = ({ candidate, failed, covered }: Verdict) =>
+  failed.includes('not-in-context')
+    ? `déjà dans le contexte permanent (${covered}/${candidate.steps.length} étapes)`
+    : failed.join(', ')
+
 export const verdictLines = (verdicts: Verdict[]) =>
-  verdicts.map(({ candidate, failed }) => (failed.length ? `✘ ${candidate.slug} — ${failed.join(', ')}` : `✔ ${candidate.slug}`)).join('\n')
+  verdicts.map(verdict => (verdict.failed.length ? `✘ ${verdict.candidate.slug} — ${reasonOf(verdict)}` : `✔ ${verdict.candidate.slug}`)).join('\n')
