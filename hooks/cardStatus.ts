@@ -8,7 +8,7 @@ const COMPLETED = 'completed'
 
 const hasLiveDescendant = ({ children }: Node): boolean => children.some(child => isLive(child.status) || hasLiveDescendant(child))
 
-const isFinished = ({ status, finished }: Node) => Boolean(finished) || status === COMPLETED || status === IDLE
+const isFinished = ({ status }: Node) => status === COMPLETED || status === IDLE
 
 const workIsOver = (node: Node) => {
   if (isFinished(node)) return true
