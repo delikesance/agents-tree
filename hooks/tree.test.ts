@@ -28,19 +28,20 @@ test('a nested agent sits under its parent with its own type and a launcher', ()
 })
 
 test('workflow agents hang under one workflow node per run, summed and ordered', () => {
-  const members = [{ id: 'w2', runId: 'wf_run', agentIndex: 2, type: 'worker', startedAt: 0, endedAt: 4 }, { id: 'w1', runId: 'wf_run', agentIndex: 1, type: 'worker', startedAt: 0 }]
+  const members = [{ id: 'w2', runId: 'wf_run', agentIndex: 2, type: 'worker', label: 'a', startedAt: 0, endedAt: 4 }, { id: 'w1', runId: 'wf_run', agentIndex: 1, type: 'worker', label: 'b', startedAt: 0 }]
   const usage = (cost: number) => ({ model: 'm', input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost, steps: 1 })
   const [group] = buildTree([], { w1: usage(1), w2: usage(2) }, {}, {}, {}, {}, {}, false, 10, members).children
   expect(group?.label).toBe('workflow · run')
   expect(group?.status).toBe('running')
   expect(group?.children).toEqual([])
-  expect(group?.goal).toBe('1 terminés · 1 en cours')
+  expect(group?.goal).toBe('▸ b')
+  expect(group?.segments).toEqual([false, true])
   expect(group?.progress).toEqual({ done: 1, total: 2 })
   expect(group?.usage?.cost).toBe(3)
 })
 
 test('a workflow node is completed once every agent ended', () => {
-  const members = [{ id: 'w1', runId: 'wf_x', agentIndex: 1, type: 'worker', startedAt: 0, endedAt: 3 }]
+  const members = [{ id: 'w1', runId: 'wf_x', agentIndex: 1, type: 'worker', label: 'b', startedAt: 0, endedAt: 3 }]
   expect(buildTree([], {}, {}, {}, {}, {}, {}, false, 10, members).children[0]?.status).toBe('completed')
 })
 

@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { finishWorkflowAgent, forgetWorkflowAgents, groupByRun, recordWorkflowAgent, workflowAgents, workflowLabel } from './workflowRuns'
 
-const member = (id: string, runId: string, agentIndex: number) => ({ id, runId, agentIndex, type: 'worker', startedAt: 1 })
+const member = (id: string, runId: string, agentIndex: number) => ({ id, runId, agentIndex, type: 'worker', label: id, startedAt: 1 })
 
 test('groupByRun orders each run by agent index', () => {
   const runs = groupByRun([member('b', 'wf_1', 2), member('c', 'wf_2', 1), member('a', 'wf_1', 1)])
