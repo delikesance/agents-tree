@@ -6,14 +6,14 @@ import { SUMMARY_TIMEOUT_MS, writeMap } from '../hooks/mapGenerate'
 import type { MapIo } from '../hooks/mapGenerate'
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024
-const CLAUDE_TIMEOUT_MS = 90_000
+const SUMMARY_CLI_TIMEOUT_MS = 90_000
 const repo = process.argv[2] ?? process.cwd()
 
 const exec = (argv: string[], input?: string, timeout = SUMMARY_TIMEOUT_MS) =>
   spawnSync(argv[0] ?? '', argv.slice(1), { cwd: repo, input, encoding: 'utf8', timeout, maxBuffer: MAX_OUTPUT_BYTES })
 
 const io: MapIo = {
-  summaryTimeoutMs: CLAUDE_TIMEOUT_MS,
+  summaryTimeoutMs: SUMMARY_CLI_TIMEOUT_MS,
   run: async argv => {
     const { status, stdout } = exec(argv)
     return { exitCode: status ?? 1, stdout: stdout ?? '' }
@@ -25,7 +25,7 @@ const io: MapIo = {
     await writeFile(join(repo, path), text)
   },
   complete: async prompt => {
-    const { status, stdout } = exec(['claude', '-p', '--model', 'haiku'], prompt, CLAUDE_TIMEOUT_MS)
+    const { status, stdout } = exec(['claude', '-p', '--model', 'haiku'], prompt, SUMMARY_CLI_TIMEOUT_MS)
     return status === 0 ? stdout : undefined
   },
 }
