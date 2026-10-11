@@ -20,14 +20,14 @@ test('a live unfinished agent is running', () => {
 test('a completed agent is done only when its work is over', () => {
   expect(cardKind(node())).toBe('done')
   expect(cardKind(node({ todos: [todo('completed')] }))).toBe('done')
-  expect(cardKind(node({ todos: [todo('completed'), todo('pending')] }))).toBe('paused')
+  expect(cardKind(node({ todos: [todo('completed'), todo('pending')] }))).toBe('done')
   expect(cardKind(node({ progress: { done: 1, total: 3 } }))).toBe('paused')
   expect(cardKind(node({ progress: { done: 3, total: 3 } }))).toBe('done')
 })
 
-test('an idle agent is paused unless every todo is completed', () => {
-  expect(cardKind(node({ status: 'idle' }))).toBe('paused')
-  expect(cardKind(node({ status: 'idle', todos: [todo('completed')] }))).toBe('done')
+test('an idle agent is done regardless of pending todos', () => {
+  expect(cardKind(node({ status: 'idle' }))).toBe('done')
+  expect(cardKind(node({ status: 'idle', todos: [todo('pending')] }))).toBe('done')
 })
 
 test('a live descendant keeps the card paused', () => {
@@ -36,7 +36,7 @@ test('a live descendant keeps the card paused', () => {
   expect(cardKind(node({ children: [child] }))).toBe('paused')
 })
 
-test('a finished main turn with todos left is paused', () => {
-  expect(cardKind(node({ status: 'running', finished: true, todos: [todo('pending')] }))).toBe('paused')
+test('a finished main turn is done regardless of todos left', () => {
+  expect(cardKind(node({ status: 'running', finished: true, todos: [todo('pending')] }))).toBe('done')
   expect(cardKind(node({ status: 'running', finished: true }))).toBe('done')
 })
