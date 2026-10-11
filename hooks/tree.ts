@@ -50,7 +50,8 @@ const elapsedOf = (id: string, now: number) => {
 
 const revealOf = (id: string) => (isDismissed(id) ? 0 : 1)
 
-const workflowStatus = ({ endedAt }: WorkflowAgent) => (endedAt === undefined ? 'running' : 'completed')
+const isEnded = (member: WorkflowAgent, hostEnded: ReadonlySet<string>) => member.endedAt !== undefined || hostEnded.has(member.id)
+const workflowStatus = (member: WorkflowAgent, hostEnded: ReadonlySet<string>) => (isEnded(member, hostEnded) ? 'completed' : 'running')
 
 const workflowGoal = (members: readonly WorkflowAgent[]) => {
   const current = members.filter(m => m.endedAt === undefined).pop()
@@ -62,21 +63,24 @@ const workflowGroup = (runId: string, agents: WorkflowAgent[], members: Node[]):
   const segments = members.map(m => !isLive(m.status))
   const done = segments.filter(Boolean).length
   const elapsed = Math.max(...members.map(m => m.elapsed ?? 0))
-  const summary = { id, label: workflowLabel(runId), status: done < members.length ? 'running' : 'completed', goal: workflowGoal(agents), segments, progress: { done, total: members.length }, elapsed, reveal: revealOf(id), children: members }
+  const summary = { id, label: workflowLabel(runId), status: 'running', goal: workflowGoal(agents), segments, progress: { done, total: members.length }, elapsed, reveal: revealOf(id), children: members }
   return { ...summary, usage: sumTree(summary), children: members }
 }
 
 export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number, workflow: readonly WorkflowAgent[] = [], launches: readonly number[] = []): Node => {
   const nodeFor = (id: string, label: string, status: string, elapsed: number | undefined): Node => ({ id, label, status, usage: usage[id], model: usage[id]?.model ?? models[id], activity: activity[id], goal: goals[id], progress: progress[id], todos: todos[id], elapsed, reveal: revealOf(id), children: [] })
+  const workflowIds = new Set(workflow.map(m => m.id))
   const nodes = new Map<string, Node>(agents.map(a => [a.id, nodeFor(a.id, `${agentName(a.id)} · ${a.type}`, a.status, elapsedOf(a.id, now))]))
   const root: Node = { id: MAIN, label: 'main', status: 'running', finished: mainFinished, usage: usage[MAIN], model: usage[MAIN]?.model, activity: activity[MAIN], goal: goals[MAIN], progress: progress[MAIN], todos: todos[MAIN], elapsed: elapsedOf(MAIN, now), reveal: 1, children: [] }
-  agents.forEach(a => {
+  agents.filter(a => !workflowIds.has(a.id)).forEach(a => {
     const parent = (a.parentId && nodes.get(a.parentId)) || root
     if (parent !== root) nodes.get(a.id)!.launchedBy = parent.label
     parent.children.push(nodes.get(a.id)!)
   })
+  const hostEnded = new Set(agents.filter(a => !isLive(a.status)).map(a => a.id))
   groupByRun(workflow).forEach((group, runId) => {
-    const children = group.map(m => ({ ...nodeFor(m.id, `${agentName(m.id)} · ${m.type}`, workflowStatus(m), (m.endedAt ?? now) - m.startedAt), launchedBy: workflowLabel(runId) }))
+    const children = group.map(m => ({ ...nodeFor(m.id, `${agentName(m.id)} · ${m.type}`, workflowStatus(m, hostEnded), (m.endedAt ?? now) - m.startedAt), launchedBy: workflowLabel(runId) }))
+    if (children.every(child => !isLive(child.status))) return
     root.children.push(workflowGroup(runId, group, children))
   })
   launches.forEach(at => {
