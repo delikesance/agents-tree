@@ -34,7 +34,7 @@ test('a live descendant keeps the card paused', () => {
   expect(cardKind(node({ children: [child] }))).toBe('paused')
 })
 
-test('a finished main turn is done regardless of todos left', () => {
-  expect(cardKind(node({ status: 'running', finished: true, todos: [todo('pending')] }))).toBe('done')
+test('a finished main turn with todos left is paused', () => {
+  expect(cardKind(node({ status: 'running', finished: true, todos: [todo('pending')] }))).toBe('paused')
   expect(cardKind(node({ status: 'running', finished: true }))).toBe('done')
 })
