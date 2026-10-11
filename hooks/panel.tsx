@@ -109,7 +109,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
     const status = STATUSES[kind]
     const done = kind === 'done'
     return (
-      <Box flexGrow={1} backgroundColor={done ? doneTint(node.usage?.model ?? node.model ?? '') : PALETTE.card} overflow="hidden">
+      <Box flexGrow={1} backgroundColor={done ? doneTint(node.usage?.model ?? node.model ?? '') : PALETTE.card} marginBottom={CARD_MARGIN_BOTTOM} overflow="hidden">
         <Box width={RAIL_CELLS} flexShrink={0} backgroundColor={RAIL_COLORS[kind as keyof typeof RAIL_COLORS] ?? PALETTE.rule}><Text> </Text></Box>
         <Box flexGrow={1} flexDirection="column" paddingX={CARD_PADDING_X}>
           <Box columnGap={2}>
@@ -119,23 +119,21 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
               {node.elapsed !== undefined && <Text color={PALETTE.muted}>  {done ? 'en ' : ''}{formatDuration(node.elapsed)}</Text>}
             </Text></Box>
             <Box flexGrow={1} />
-            {node.usage && <Box flexShrink={0}><Text wrap="truncate-end" color={PALETTE.muted}>{shortModel(node.usage.model)}{route && ` · ${route}`}  {formatCost(node.usage.cost)}</Text></Box>}
             <Box columnGap={ACTION_GAP} flexShrink={0}>
               {!node.segments && <ActionButton id={`open:${node.id}`} label="ouvrir ▸" background={PALETTE.rule} onPress={() => onOpen(node.id)} />}
               {isLive(node.status) && onStop && <ActionButton id={`stop:${node.id}`} label={`arrêter ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={() => onStop(node.id)} />}
               {!isLive(node.status) && <ActionButton id={`dismiss:${node.id}`} label={`retirer ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={() => onDismiss(node.id)} />}
             </Box>
           </Box>
+          <Box overflow="hidden"><Text wrap="truncate-end" bold color={PALETTE.text}>{status.mark} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text></Box>
           <Box columnGap={2}>
-            <Box flexShrink={1} overflow="hidden"><Text wrap="truncate-end" bold color={PALETTE.text}>{status.mark} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text></Box>
             {node.segments?.length ? (
               <>
-                <SegmentPips segments={node.segments} />
                 <Text color={PALETTE.muted}>{node.progress?.done}/{node.progress?.total} terminés</Text>
+                <SegmentPips segments={node.segments} />
               </>
-            ) : (
-              node.usage && <><Box flexGrow={1} /><Box flexShrink={0}><Text wrap="truncate-end" color={PALETTE.muted}>{ICONS.download} {formatTokens(node.usage.input + node.usage.cacheRead + node.usage.cacheWrite)}  {ICONS.upload} {formatTokens(node.usage.output)}  {ICONS.requests} {node.usage.steps}</Text></Box></>
-            )}
+            ) : <Box flexGrow={1} />}
+            {node.usage && <Box flexShrink={0}><Text wrap="truncate-end" color={PALETTE.muted}>{shortModel(node.usage.model)}{route && ` · ${route}`}  {formatCost(node.usage.cost)}{!node.segments && `   ${ICONS.download} ${formatTokens(node.usage.input + node.usage.cacheRead + node.usage.cacheWrite)}  ${ICONS.upload} ${formatTokens(node.usage.output)}  ${ICONS.requests} ${node.usage.steps}`}</Text></Box>}
           </Box>
         </Box>
       </Box>
