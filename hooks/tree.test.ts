@@ -33,7 +33,7 @@ test('workflow agents hang under one workflow node per run, summed and ordered',
   const [group] = buildTree([], { w1: usage(1), w2: usage(2) }, {}, {}, {}, {}, {}, false, 10, members).children
   expect(group?.label).toBe('workflow · run')
   expect(group?.status).toBe('running')
-  expect(group?.children).toEqual([])
+  expect(group?.children.map(({ id }) => id)).toEqual(['w1', 'w2'])
   expect(group?.goal).toBe('▸ b')
   expect(group?.segments).toEqual([false, true])
   expect(group?.progress).toEqual({ done: 1, total: 2 })
