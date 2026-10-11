@@ -4,7 +4,7 @@ import { isLive } from './skillMaintenance'
 import { promotionPatch } from './skillPromotion'
 import { MAX_ACTIVE_SKILLS, type SkillLedger, type SkillRecord } from './skillTypes'
 
-const SOURCES = ['CLAUDE.md', 'README.md']
+const SOURCES = ['README.md']
 const PERMANENT_CONTEXT = ['CLAUDE.md', 'AGENTS.md', '.claude/project-map.md']
 
 const groundedIn = async (deps: SkillDeps, cwd: string, candidate: DiscoveryCandidate): Promise<DiscoveryCandidate> => {
