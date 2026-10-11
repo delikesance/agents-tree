@@ -37,8 +37,8 @@ export async function adoptVerdicts(deps: SkillDeps, cwd: string, ledger: SkillL
   let adopted = ledger
   for (const { candidate } of accepted) {
     const record = recordOf(candidate, deps.now())
-    const patch = await promotionPatch(deps, cwd, record).catch(() => undefined)
-    if (patch) adopted = { ...adopted, [record.slug]: { ...record, ...patch } }
+    const outcome = await promotionPatch(deps, cwd, record).catch(() => undefined)
+    if (outcome?.ok) adopted = { ...adopted, [record.slug]: { ...record, ...outcome.value } }
   }
   return adopted
 }

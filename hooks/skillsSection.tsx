@@ -14,6 +14,8 @@ const RAIL_WIDTH = 1
 const DISMISS_LABEL = 'dégager ✕'
 const INACTIVE_STATUSES: SkillStatus[] = ['stale', 'archived', 'rejected']
 const BUSY_LABEL = 'rédaction…'
+const RETRY_LABEL = 'réessayer'
+const FAILED_PREFIX = 'échec : '
 const EMPTY_LABEL = 'aucun skill appris pour le moment'
 
 const STATUS_BADGES: Record<SkillStatus, { label: string; background: string; color: string }> = {
@@ -52,7 +54,7 @@ export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
     if (isBusy(slug)) return <Text color={PALETTE.muted}>{BUSY_LABEL}</Text>
     return (
       <>
-        {isCandidate && <ActionButton id={`accept:${slug}`} label="accepter" background={PALETTE.badgeGreen} onPress={() => onAccept(slug)} />}
+        {isCandidate && <ActionButton id={`accept:${slug}`} label={row.lastError ? RETRY_LABEL : 'accepter'} background={PALETTE.badgeGreen} onPress={() => onAccept(slug)} />}
         <ActionButton id={`reject:${slug}`} label={isCandidate ? 'rejeter' : 'supprimer'} background={PALETTE.badgeRed} onPress={() => onReject(slug)} />
       </>
     )
@@ -74,6 +76,7 @@ export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
           <Box columnGap={ACTION_GAP} flexShrink={0}><RowActions row={row} {...handlers} /></Box>
         </Box>
         <Text color={PALETTE.muted} wrap="truncate-end">{row.summary}</Text>
+        {row.lastError && <Text color={PALETTE.red} wrap="truncate-end">{`${FAILED_PREFIX}${row.lastError}`}</Text>}
         </Box>
       </Box>
     )

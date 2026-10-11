@@ -2,18 +2,25 @@ import type { SkillDeps } from './skillHost'
 import { groupSignal, isInactive, readyToPromote, reject, remove, removeInactive, restore } from './skillLedger'
 import { recordUse, revalidate } from './skillLifecycle'
 import { closeSession, flagStale, isLive } from './skillMaintenance'
-import { promotionPatch } from './skillPromotion'
+import { promotionPatch, type PromotionPatch } from './skillPromotion'
 import { summarizeCandidate } from './skillSummary'
 import { adoptVerdicts, discoverVerdicts, verdictLines } from './skillDiscover'
 import { createSignalDetector } from './skillSignals'
-import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
+import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type Outcome, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
 import { headCommit, removeSkill } from './skillWriter'
 
 const MAX_PROMOTE_ATTEMPTS = 3
 const SESSION_STORE_KEY = `${SKILLS_STORE_KEY}.session`
 const FILE_ARGS = ['file_path', 'path', 'notebook_path']
+const NO_PROJECT = 'Aucun projet ouvert.'
+const ALREADY_PROMOTING = 'Rédaction déjà en cours pour ce skill.'
 
 const filesOf = (call: Record<string, unknown>) => FILE_ARGS.map(key => call[key]).filter((value): value is string => typeof value === 'string' && value !== '')
+
+const patchRecord = (ledger: SkillLedger, slug: string, patch: Partial<SkillRecord>): SkillLedger =>
+  ledger[slug] ? { ...ledger, [slug]: { ...ledger[slug], ...patch } } : ledger
+
+const thrownOutcome = (error: unknown): Outcome<never> => ({ ok: false, reason: error instanceof Error ? error.message : String(error) })
 
 const dropSkillFiles = async (deps: SkillDeps, records: SkillRecord[]) => {
   const { cwd } = deps
@@ -52,27 +59,27 @@ export function createSkillLearning() {
   const learn = (deps: SkillDeps, ledger: SkillLedger, signals: SkillSignal[]) =>
     startPromotions(deps, signals.reduce((current, signal) => groupSignal(current, signal).ledger, ledger))
 
-  const applyPromotion = async (deps: SkillDeps, ledger: SkillLedger, slug: string, patch: NonNullable<Awaited<ReturnType<typeof promotionPatch>>>) => {
+  const applyPromotion = async (deps: SkillDeps, ledger: SkillLedger, slug: string, patch: PromotionPatch) => {
     const record = ledger[slug]
-    if (record?.status === 'candidate') return { ...ledger, [slug]: { ...record, ...patch } }
+    if (record?.status === 'candidate') return patchRecord(ledger, slug, patch)
     if (deps.cwd) await removeSkill(deps.fs, deps.cwd, slug)
     return ledger
   }
 
-  const promote = async (deps: SkillDeps, cwd: string, slug: string) => {
-    const record = (await load(deps))[slug]
-    const patch = record && (await promotionPatch(deps, cwd, record).catch(() => undefined))
-    if (patch) await mutate(deps, ledger => applyPromotion(deps, ledger, slug, patch))
-    promoting.delete(slug)
-  }
+  const applyOutcome = (deps: SkillDeps, ledger: SkillLedger, slug: string, outcome: Outcome<PromotionPatch>) =>
+    outcome.ok ? applyPromotion(deps, ledger, slug, outcome.value) : patchRecord(ledger, slug, { lastError: outcome.reason })
 
-  const withSummary = (ledger: SkillLedger, slug: string, summary: string): SkillLedger =>
-    ledger[slug] ? { ...ledger, [slug]: { ...ledger[slug], summary } } : ledger
+  const promote = async (deps: SkillDeps, cwd: string, record: SkillRecord): Promise<Outcome<PromotionPatch>> => {
+    const outcome = await promotionPatch(deps, cwd, record).catch(thrownOutcome)
+    await mutate(deps, ledger => applyOutcome(deps, ledger, record.slug, outcome))
+    promoting.delete(record.slug)
+    return outcome
+  }
 
   const summarize = async (deps: SkillDeps, record: SkillRecord) => {
     const summary = await summarizeCandidate(record, deps.fs)
     summarizing.delete(record.slug)
-    if (summary) await mutate(deps, ledger => withSummary(ledger, record.slug, summary))
+    if (summary) await mutate(deps, ledger => patchRecord(ledger, record.slug, { summary }))
   }
 
   const startSummaries = (deps: SkillDeps, ledger: SkillLedger) => {
@@ -96,7 +103,7 @@ export function createSkillLearning() {
       if (!cwd || exhausted || promoting.has(slug) || !readyToPromote(record, liveCount)) continue
       promoting.add(slug)
       attempts.set(slug, (attempts.get(slug) ?? 0) + 1)
-      void promote(deps, cwd, slug)
+      void promote(deps, cwd, record)
     }
     return startSummaries(deps, ledger)
   }
@@ -147,7 +154,7 @@ export function createSkillLearning() {
       }),
     discover: async (deps: SkillDeps, apply: boolean) => {
       const { cwd } = deps
-      if (!cwd) return 'Aucun projet ouvert.'
+      if (!cwd) return NO_PROJECT
       const verdicts = await discoverVerdicts(deps, cwd, await load(deps))
       if (apply) void mutate(deps, ledger => adoptVerdicts(deps, cwd, ledger, verdicts))
       if (!verdicts.length) return 'Aucun candidat dans CLAUDE.md / README.md.'
@@ -158,12 +165,18 @@ export function createSkillLearning() {
         if (ledger[slug] && isLive(ledger[slug]) && deps.cwd) await removeSkill(deps.fs, deps.cwd, slug)
         return reject(ledger, slug)
       }),
-    accept: async (deps: SkillDeps, slug: string) => {
+    accept: async (deps: SkillDeps, slug: string): Promise<string | undefined> => {
       const { cwd } = deps
-      const record = (await load(deps))[slug]
-      if (!cwd || record?.status !== 'candidate' || promoting.has(slug)) return
+      if (!cwd) return NO_PROJECT
+      if (promoting.has(slug)) return ALREADY_PROMOTING
       promoting.add(slug)
-      await promote(deps, cwd, slug)
+      const record = (await load(deps))[slug]
+      if (record?.status !== 'candidate') {
+        promoting.delete(slug)
+        return
+      }
+      const outcome = await promote(deps, cwd, record)
+      return outcome.ok ? undefined : outcome.reason
     },
     restore: (deps: SkillDeps, slug: string) => mutate(deps, ledger => startPromotions(deps, restore(resetIdle(ledger, slug), slug))),
     dismiss: (deps: SkillDeps, slug: string) =>
