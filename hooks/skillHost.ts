@@ -1,6 +1,6 @@
 import type { SkillFs } from './skillTypes'
 
-const RUN_TIMEOUT_MS = 90_000
+const RUN_TIMEOUT_MS = 180_000
 
 export type SkillDeps = {
   store: { get: (key: string) => Promise<unknown>; set: (key: string, value: unknown) => Promise<void> }

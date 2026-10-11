@@ -2,7 +2,7 @@ import { SYNTHESIS_ENV, type SkillFs, type SkillRecord } from './skillTypes'
 
 export type SynthesizedSkill = { description: string; steps: string[] }
 
-export const SYNTHESIS_TIMEOUT_SECONDS = 60
+export const SYNTHESIS_TIMEOUT_SECONDS = 150
 export const SYNTHESIS_MODEL = 'haiku'
 const MAX_STEPS = 8
 export const MAX_SIGNALS = 12
