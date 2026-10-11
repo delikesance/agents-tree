@@ -16,6 +16,8 @@ const PCT_WIDTH = 4
 const QUOTA_GAP = 2
 const QUOTA_GAP_TEXT = ' '.repeat(QUOTA_GAP)
 const MIN_BAR_CELLS = 10
+const SEGMENT_GLYPH = '━'
+const SEGMENT_GLYPH_CELLS = 200
 const CARD_PADDING_X = 2
 const INDENT = 2
 const GUTTER_MARK = '│'
@@ -121,10 +123,16 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
                 <Text bold color={PALETTE.text}>{done ? ICONS.done : ICONS.goal} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text>
               </Box>
               {!compact && !!node.segments?.length && (
-                <Text>
-                  {node.segments.map(done => <Text color={done ? PALETTE.green : PALETTE.yellow}>{'██ '}</Text>)}
-                  <Text color={PALETTE.muted}> {node.progress?.done}/{node.progress?.total}  terminés</Text>
-                </Text>
+                <Box flexDirection="column">
+                  <Box columnGap={1}>
+                    {node.segments.map(done => (
+                      <Box flexGrow={1} flexBasis={0} overflow="hidden">
+                        <Text wrap="truncate-end" color={done ? PALETTE.green : PALETTE.yellow}>{SEGMENT_GLYPH.repeat(SEGMENT_GLYPH_CELLS)}</Text>
+                      </Box>
+                    ))}
+                  </Box>
+                  <Text color={PALETTE.muted}>{node.progress?.done}/{node.progress?.total}  terminés</Text>
+                </Box>
               )}
               {!compact && !!node.todos?.length && <TodoList todos={node.todos} animated={kind === 'running'} />}
               <Box justifyContent="space-between" alignItems="center">
