@@ -13,16 +13,16 @@ const ROW_GAP = 2
 const BUSY_LABEL = 'rédaction…'
 const EMPTY_LABEL = 'aucun skill appris pour le moment'
 
-const STATUS_COLORS: Record<SkillStatus, string> = {
-  active: PALETTE.badgeGreen,
-  stale: PALETTE.yellow,
-  candidate: PALETTE.text,
-  archived: PALETTE.muted,
-  rejected: PALETTE.muted,
+const STATUS_BADGES: Record<SkillStatus, { label: string; background: string; color: string }> = {
+  active: { label: 'actif', background: PALETTE.badgeGreen, color: PALETTE.onBadge },
+  stale: { label: 'périmé', background: PALETTE.yellow, color: PALETTE.onYellow },
+  candidate: { label: 'candidat', background: PALETTE.rule, color: PALETTE.text },
+  archived: { label: 'archivé', background: PALETTE.surface, color: PALETTE.muted },
+  rejected: { label: 'rejeté', background: PALETTE.surface, color: PALETTE.muted },
 }
 
 export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
-  const { ActionButton } = makeBadge({ Box, Text, Button })
+  const { ActionButton, Badge } = makeBadge({ Box, Text, Button })
 
   const RowActions = ({ row, onAccept, onReject, onRestore, onRevalidate, isBusy }: { row: SkillRow } & Handlers) => {
     const { slug, status } = row
@@ -38,15 +38,22 @@ export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
     )
   }
 
-  const SkillRowView = ({ row, ...handlers }: { row: SkillRow } & Handlers) => (
-    <Box flexDirection="column">
-      <Box justifyContent="space-between" columnGap={ROW_GAP}>
-        <Text wrap="truncate-end" color={STATUS_COLORS[row.status]}>{row.label}</Text>
-        <Box columnGap={ACTION_GAP} flexShrink={0}><RowActions row={row} {...handlers} /></Box>
+  const SkillRowView = ({ row, ...handlers }: { row: SkillRow } & Handlers) => {
+    const badge = STATUS_BADGES[row.status]
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Box justifyContent="space-between" columnGap={ROW_GAP}>
+          <Box columnGap={ROW_GAP} flexShrink={1}>
+            <Badge background={badge.background} color={badge.color}>{badge.label}</Badge>
+            <Text bold wrap="truncate-end" color={PALETTE.text}>{row.slug}</Text>
+            <Text color={PALETTE.muted}>{`${row.cleanUses}/${row.uses}`}</Text>
+          </Box>
+          <Box columnGap={ACTION_GAP} flexShrink={0}><RowActions row={row} {...handlers} /></Box>
+        </Box>
+        <Text color={PALETTE.muted} wrap="truncate-end">{row.summary}</Text>
       </Box>
-      {row.summary && <Text color={PALETTE.muted} wrap="truncate-end">{row.summary}</Text>}
-    </Box>
-  )
+    )
+  }
 
   return ({ ledger, ...handlers }: { ledger: SkillLedger } & Handlers) => {
     const rows = viewSkills(ledger)
