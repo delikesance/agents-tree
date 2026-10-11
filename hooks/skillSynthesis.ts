@@ -1,9 +1,12 @@
-import { SYNTHESIS_ENV, type SkillFs, type SkillRecord } from './skillTypes'
+import { SYNTHESIS_ENV, type Outcome, type SkillFs, type SkillRecord } from './skillTypes'
 
 export type SynthesizedSkill = { description: string; steps: string[] }
 
 export const SYNTHESIS_TIMEOUT_SECONDS = 150
 export const SYNTHESIS_MODEL = 'haiku'
+const TIMEOUT_MESSAGE = 'timeout'
+const TIMEOUT_REASON = `délai de ${SYNTHESIS_TIMEOUT_SECONDS} s dépassé`
+const INVALID_REPLY_REASON = 'réponse de synthèse invalide'
 const MAX_STEPS = 8
 export const MAX_SIGNALS = 12
 const MAX_FIELD_CHARS = 200
@@ -40,15 +43,22 @@ export function parseSynthesis(output: string): SynthesizedSkill | undefined {
   }
 }
 
-const timeoutAfter = (seconds: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), seconds * 1000))
+const timeoutAfter = (seconds: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(TIMEOUT_MESSAGE)), seconds * 1000))
 
 export const askModel = (fs: SkillFs, prompt: string) =>
   Promise.race([fs.run(['env', `${SYNTHESIS_ENV}=1`, 'claude', '-p', '--model', SYNTHESIS_MODEL, prompt]), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)])
 
-export async function synthesizeSkill(record: SkillRecord, fs: SkillFs): Promise<SynthesizedSkill | undefined> {
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+const failureReason = (error: unknown) => (errorMessage(error) === TIMEOUT_MESSAGE ? TIMEOUT_REASON : `claude a échoué : ${errorMessage(error)}`)
+
+export async function synthesizeSkill(record: SkillRecord, fs: SkillFs): Promise<Outcome<SynthesizedSkill>> {
+  let output: string
   try {
-    return parseSynthesis(await askModel(fs, buildPrompt(record)))
-  } catch {
-    return undefined
+    output = await askModel(fs, buildPrompt(record))
+  } catch (error) {
+    return { ok: false, reason: failureReason(error) }
   }
+  const synthesized = parseSynthesis(output)
+  return synthesized ? { ok: true, value: synthesized } : { ok: false, reason: INVALID_REPLY_REASON }
 }

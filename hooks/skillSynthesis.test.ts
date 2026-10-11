@@ -31,10 +31,18 @@ test('synthesizeSkill: runs the model command and parses output', async () => {
     command = argv
     return '{"description":"Use when x","steps":["a"]}'
   })
-  expect(await synthesizeSkill(record, fs)).toEqual({ description: 'Use when x', steps: ['a'] })
+  expect(await synthesizeSkill(record, fs)).toEqual({ ok: true, value: { description: 'Use when x', steps: ['a'] } })
   expect(command.slice(0, 6)).toEqual(['env', 'HIVE_SKILL_SYNTHESIS=1', 'claude', '-p', '--model', 'haiku'])
 })
 
-test('synthesizeSkill: undefined when the command throws', async () => {
-  expect(await synthesizeSkill(record, fsReturning(async () => { throw new Error('boom') }))).toBeUndefined()
+test('synthesizeSkill: reports the CLI error when the command throws', async () => {
+  expect(await synthesizeSkill(record, fsReturning(async () => { throw new Error('boom') }))).toEqual({ ok: false, reason: 'claude a échoué : boom' })
+})
+
+test('synthesizeSkill: reports a timeout', async () => {
+  expect(await synthesizeSkill(record, fsReturning(async () => { throw new Error('timeout') }))).toEqual({ ok: false, reason: 'délai de 150 s dépassé' })
+})
+
+test('synthesizeSkill: reports an unparsable reply', async () => {
+  expect(await synthesizeSkill(record, fsReturning(async () => 'not json'))).toEqual({ ok: false, reason: 'réponse de synthèse invalide' })
 })

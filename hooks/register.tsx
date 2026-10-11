@@ -526,9 +526,12 @@ export const register: Register = on => {
     }
     const SkillsSection = makeSkillsSection(ui)
     const skills = await learning.ledger(skillsOf($))
-    const changeSkill = (change: Promise<void>, redrawNow = false) => {
+    const changeSkill = (change: Promise<string | void>, redrawNow = false) => {
       if (redrawNow) setTimeout(() => $.ui.invalidate('ui.render'), 0)
-      void change.then(() => $.ui.invalidate('ui.render'))
+      void change.then(message => {
+        if (message) $.ui.toast(message)
+        $.ui.invalidate('ui.render')
+      })
     }
     const { ActionButton } = makeBadge(ui)
     const finished = allRows.filter(({ node }) => node.id !== MAIN && !isLive(node.status))
