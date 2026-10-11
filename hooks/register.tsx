@@ -19,6 +19,7 @@ import { recordPrompt } from './metrics'
 import { relevantMemories } from './recall-inject'
 import { parseRemember } from './remember'
 import { onlyIfChanged } from './injected'
+import { asksUltracode, ultracodeNote } from './ultracode'
 import { makeBanner } from './banner'
 import { makeContext } from './contextSection'
 import { cacheHitRate, clampedPercent, compactionLimit, contextSegments, contextSummary, percent, mostUrgent, rateBars, usageLines } from './format'
@@ -207,7 +208,9 @@ const isBriefable = async ($: BriefHost, e: Submission) => isComposerPrompt(e) &
 
 const briefFor = async ($: BriefHost, e: Submission) => ((await isBriefable($, e)) ? buildBrief(e.text) : undefined)
 
-const modeWanted = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && looksMultiStep(e.text) && !!(await $.store.get(MODE_KEY))
+const isOwnMultiStep = (e: Submission) => isComposerPrompt(e) && looksMultiStep(e.text) && !asksUltracode(e.text)
+
+const modeWanted = async ($: BriefHost, e: Submission) => isOwnMultiStep(e) && !!(await $.store.get(MODE_KEY))
 
 const modeFor = async ($: BriefHost & JevHost, e: Submission) => {
   const verdict = await jevChoice($, { task: e.text.slice(0, JEV_TASK_MAX) }, 'Which working mode does `task` need?', MODE_CRITERIA)
@@ -244,7 +247,7 @@ const startFlow = async ($: PlanHost, actions: FlowActions, e: Submission) => {
   stashFlow(await runFlow(actions, plan.features, await mainState($)))
 }
 
-const flowEnabled = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && looksMultiStep(e.text) && !!(await $.store.get(FLOW_KEY))
+const flowEnabled = async ($: BriefHost, e: Submission) => isOwnMultiStep(e) && !!(await $.store.get(FLOW_KEY))
 
 const autoCompact = async ($: StateHost & { session: { compact: (args: { instructions: string }) => Promise<unknown> } }, tokens: number) => {
   if (tokens < AUTO_COMPACT_TOKENS) autoCompactState.armed = true
@@ -415,17 +418,18 @@ export const register: Register = on => {
     if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
-    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), earlierFlow, onlyIfChanged(session, 'map', mapNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
+    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), onlyIfChanged(session, 'ultracode', isComposerPrompt(e) ? ultracodeNote(e.text) : undefined), earlierFlow, onlyIfChanged(session, 'map', mapNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
     if (projectDir.cwd) void recordPrompt(fsOf($), { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
 
   on('agent.spawn', async ($, e, next) => {
-    const declared = await declaredModel(path => $.fs.read(path), [projectDir.cwd, await $.env.get('HOME')], e.subagentType).catch(() => undefined)
-    const route = e.model || declared ? undefined : await routeSpawn($, e.prompt).catch(() => undefined)
+    const declared = e.workflow ? undefined : await declaredModel(path => $.fs.read(path), [projectDir.cwd, await $.env.get('HOME')], e.subagentType).catch(() => undefined)
+    const route = e.workflow || e.model || declared ? undefined : await routeSpawn($, e.prompt).catch(() => undefined)
     const injected = route ? modelToInject(e.model, declared, route.model) : undefined
     const routed = injected ? { ...e, model: injected } : e
-    const result = await next({ ...routed, prompt: await pointAtMap(mapHostOf($), projectDir.cwd, withReportLimit(routed.prompt)) })
+    // The host ignores any rewrite of a workflow agent and logs it as a plugin failure.
+    const result = await next(e.workflow ? e : { ...routed, prompt: await pointAtMap(mapHostOf($), projectDir.cwd, withReportLimit(routed.prompt)) })
     if (result.agentId) {
       const { agentId } = result
       const model = result.model ?? injected ?? declared
