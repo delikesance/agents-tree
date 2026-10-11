@@ -5,6 +5,7 @@ import { closeSession, flagStale, isLive } from './skillMaintenance'
 import { promotionPatch, type PromotionPatch } from './skillPromotion'
 import { summarizeCandidate } from './skillSummary'
 import { adoptVerdicts, discoverVerdicts, verdictLines } from './skillDiscover'
+import { skillNudge } from './skillNudge'
 import { createSignalDetector } from './skillSignals'
 import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type Outcome, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
 import { headCommit, removeSkill } from './skillWriter'
@@ -129,6 +130,7 @@ export function createSkillLearning() {
   return {
     ledger: (deps: SkillDeps) => load(deps),
     isPromoting: (slug: string) => promoting.has(slug),
+    nudge: async (deps: SkillDeps, text: string) => skillNudge(await load(deps), text),
     onSessionStart: (deps: SkillDeps) => run(deps, ledger => ledger),
     onTool: (deps: SkillDeps, call: Record<string, unknown> & { tool: string }, failed: boolean) =>
       run(deps, ledger => learn(deps, ledger, detector.push({ type: 'tool', sessionId: session.id, at: deps.now(), tool: call.tool, files: filesOf(call), failed }))),
