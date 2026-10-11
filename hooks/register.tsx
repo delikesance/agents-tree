@@ -272,8 +272,8 @@ const SWITCHES = new Map([
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'agent-graph', description: 'Show running agents with tokens and estimated cost', argumentHint: '[brief|mode|compact|flow on|off]' })
-    void $.ui.open({ id: PANE, title: 'Agents' })
+    await $.command.register({ name: 'agent-graph', description: 'Hive: show running agents with tokens and estimated cost', argumentHint: '[brief|mode|compact|flow on|off]' })
+    void $.ui.open({ id: PANE, title: 'Hive' })
     wakeAnimation($)
     resetImageReads()
     resetBreaker()
@@ -296,8 +296,8 @@ export const register: Register = on => {
       return { text: `${toggle.label} ${value === 'on' ? 'activé' : 'désactivé'}.` }
     }
     if (toggle) return { text: `${toggle.label}: /agent-graph ${subcommand} on|off` }
-    await $.ui.open({ id: PANE, title: 'Agents' })
-    return { text: 'Agent graph opened.' }
+    await $.ui.open({ id: PANE, title: 'Hive' })
+    return { text: 'Hive opened.' }
   })
 
   on('session.measure', async ($, e, next) => {

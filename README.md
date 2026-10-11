@@ -1,4 +1,4 @@
-# agent-graph
+# Hive
 
 In-TUI plugin that shows the agents of a session (tree, cost, quotas, activity) in a side pane.
 
