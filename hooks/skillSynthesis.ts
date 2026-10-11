@@ -2,16 +2,16 @@ import { SYNTHESIS_ENV, type SkillFs, type SkillRecord } from './skillTypes'
 
 export type SynthesizedSkill = { description: string; steps: string[] }
 
-const SYNTHESIS_TIMEOUT_SECONDS = 60
-const SYNTHESIS_MODEL = 'haiku'
+export const SYNTHESIS_TIMEOUT_SECONDS = 60
+export const SYNTHESIS_MODEL = 'haiku'
 const MAX_STEPS = 8
-const MAX_SIGNALS = 12
+export const MAX_SIGNALS = 12
 const MAX_FIELD_CHARS = 200
 const MAX_LIST_ITEMS = 8
 
-const clip = (text: string) => text.replace(/\s+/g, ' ').slice(0, MAX_FIELD_CHARS)
+export const clip = (text: string) => text.replace(/\s+/g, ' ').slice(0, MAX_FIELD_CHARS)
 
-const describeSignal = (signal: SkillRecord['signals'][number]) =>
+export const describeSignal =(signal: SkillRecord['signals'][number]) =>
   `- ${signal.kind}: ${clip(signal.note)} | files: ${signal.files.slice(0, MAX_LIST_ITEMS).map(clip).join(', ')} | tools: ${signal.tools.slice(0, MAX_LIST_ITEMS).join(', ')}`
 
 export function buildPrompt(record: SkillRecord): string {
@@ -42,10 +42,12 @@ export function parseSynthesis(output: string): SynthesizedSkill | undefined {
 
 const timeoutAfter = (seconds: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), seconds * 1000))
 
+export const askModel = (fs: SkillFs, prompt: string) =>
+  Promise.race([fs.run(['env', `${SYNTHESIS_ENV}=1`, 'claude', '-p', '--model', SYNTHESIS_MODEL, prompt]), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)])
+
 export async function synthesizeSkill(record: SkillRecord, fs: SkillFs): Promise<SynthesizedSkill | undefined> {
   try {
-    const command = ['env', `${SYNTHESIS_ENV}=1`, 'claude', '-p', '--model', SYNTHESIS_MODEL, buildPrompt(record)]
-    return parseSynthesis(await Promise.race([fs.run(command), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)]))
+    return parseSynthesis(await askModel(fs, buildPrompt(record)))
   } catch {
     return undefined
   }
