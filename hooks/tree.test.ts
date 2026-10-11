@@ -50,16 +50,21 @@ const mainRow = row({ id: 'main', status: 'running' }, 0)
 
 test('visibleAgents keeps live agents and their ancestors before finished ones', () => {
   const rows = [mainRow, row({ id: 'old' }, 1), row({ id: 'parent' }, 1), row({ id: 'child', status: 'running' }, 2)]
-  const { shown, hidden } = visibleAgents(rows, 3 * 3)
+  const { shown, hidden } = visibleAgents(rows, cardHeight(mainRow.node) + 4)
   expect(shown.map(({ node }) => node.id)).toEqual(['main', 'parent', 'child'])
   expect(hidden).toBe(1)
 })
 
 test('visibleAgents fills spare space with finished agents, newest first', () => {
   const rows = [mainRow, row({ id: 'new' }, 1), row({ id: 'older' }, 1)]
-  const { shown, hidden } = visibleAgents(rows, 2 * cardHeight(mainRow.node, true))
+  const { shown, hidden } = visibleAgents(rows, cardHeight(mainRow.node) + 2)
   expect(shown.map(({ node }) => node.id)).toEqual(['main', 'new'])
   expect(hidden).toBe(1)
+})
+
+test('cardHeight is 2 for sub-agents and taller for the main card', () => {
+  expect(cardHeight(row({ id: 'a' }, 1).node)).toBe(2)
+  expect(cardHeight(mainRow.node)).toBeGreaterThan(2)
 })
 
 test('visibleAgents shows everything when it fits', () => {
