@@ -3,6 +3,7 @@ import { groupSignal, readyToPromote, reject, restore } from './skillLedger'
 import { recordUse, revalidate } from './skillLifecycle'
 import { closeSession, flagStale, isLive } from './skillMaintenance'
 import { promotionPatch } from './skillPromotion'
+import { adoptVerdicts, discoverVerdicts, verdictLines } from './skillDiscover'
 import { createSignalDetector } from './skillSignals'
 import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type SkillLedger, type SkillSignal } from './skillTypes'
 import { headCommit, removeSkill } from './skillWriter'
@@ -114,6 +115,13 @@ export function createSkillLearning() {
         if (ledger[slug]) session.used.push(slug)
         return ledger
       }),
+    discover: async (deps: SkillDeps, apply: boolean) => {
+      const { cwd } = deps
+      if (!cwd) return 'Aucun projet ouvert.'
+      const verdicts = await discoverVerdicts(deps, cwd, await load(deps))
+      if (apply) await mutate(deps, ledger => adoptVerdicts(deps, cwd, ledger, verdicts))
+      return verdicts.length ? verdictLines(verdicts) : 'Aucun candidat dans CLAUDE.md / README.md.'
+    },
     reject: (deps: SkillDeps, slug: string) =>
       mutate(deps, async ledger => {
         if (ledger[slug] && isLive(ledger[slug]) && deps.cwd) await removeSkill(deps.fs, deps.cwd, slug)

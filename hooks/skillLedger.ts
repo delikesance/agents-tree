@@ -18,7 +18,7 @@ export const signalTags = (signal: SkillSignal) => {
     .map(([token]) => token)
 }
 
-const jaccard = (a: string[], b: string[]) => {
+export const jaccard = (a: string[], b: string[]) => {
   const left = new Set(a)
   const right = new Set(b)
   const shared = [...left].filter(token => right.has(token)).length

@@ -19,6 +19,7 @@ HIVE watches the main session for repeated work and turns it into project skills
 - Use is counted from the `skill.prompt` event; a use is clean when the next prompt is not a correction. A skill unused for 10 sessions (`ARCHIVE_AFTER_IDLE_SESSIONS`), or with fewer than half clean uses over 5 or more uses, is archived and its file removed.
 - A skill whose cited files changed in git since it was written turns stale; revalidate it from the SKILLS section of the pane.
 - Veto: `rejeter` in the SKILLS section deletes the file and the same pattern is never proposed again; `restaurer` brings a rejected or archived skill back as a candidate.
+- `/hive discover` scans CLAUDE.md and README.md sections and judges each on four criteria: multi-step (3+ steps), grounded (cites an existing file), verifiable (names a runnable command), new (no overlap with a ledger skill). It lists accepted and rejected candidates with the failed criteria; `/hive discover apply` synthesizes and writes the accepted ones (within the 20-skill cap).
 - Skills written by hand are not in the ledger and are never touched.
 
 ## Tests

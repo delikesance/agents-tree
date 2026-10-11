@@ -313,7 +313,7 @@ const SWITCHES = new Map([
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'hive', description: 'HIVE: show running agents with tokens and estimated cost', argumentHint: '[id|brief|mode|compact|flow on|off]' })
+    await $.command.register({ name: 'hive', description: 'HIVE: show running agents with tokens and estimated cost', argumentHint: '[id|brief|mode|compact|discover [apply]|flow on|off]' })
     void $.ui.open({ id: PANE, title: 'HIVE' })
     wakeAnimation($)
     resetImageReads()
@@ -333,6 +333,7 @@ export const register: Register = on => {
     const [subcommand, rawValue] = e.args.trim().split(/\s+/)
     if (subcommand === 'id') return { text: `Conversation ID: ${await $.session.id()}` }
     const value = rawValue?.toLowerCase()
+    if (subcommand === 'discover') return { text: await learning.discover(skillsOf($), value === 'apply') }
     const toggle = SWITCHES.get(subcommand ?? '')
     if (toggle && (value === 'on' || value === 'off')) {
       await $.store.set(toggle.key, value === 'on')
