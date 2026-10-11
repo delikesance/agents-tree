@@ -459,7 +459,7 @@ export const register: Register = on => {
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
     const skillNote = isCommand ? undefined : await learning.nudge(skillsOf($), e.text).catch(() => undefined)
-    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), isComposerPrompt(e) ? ultracodeNote(e.text) : undefined, earlierFlow, onlyIfChanged(session, 'map', mapNote), onlyIfChanged(session, 'skill', skillNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
+    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), isComposerPrompt(e) ? ultracodeNote(e.text) : undefined, earlierFlow, onlyIfChanged(session, 'map', mapNote), skillNote, isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
     if (projectDir.cwd) void recordPrompt(fsOf($), { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
