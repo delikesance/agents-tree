@@ -3,9 +3,10 @@ import { groupSignal, readyToPromote, reject, restore } from './skillLedger'
 import { recordUse, revalidate } from './skillLifecycle'
 import { closeSession, flagStale, isLive } from './skillMaintenance'
 import { promotionPatch } from './skillPromotion'
+import { summarizeCandidate } from './skillSummary'
 import { adoptVerdicts, discoverVerdicts, verdictLines } from './skillDiscover'
 import { createSignalDetector } from './skillSignals'
-import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type SkillLedger, type SkillSignal } from './skillTypes'
+import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
 import { headCommit, removeSkill } from './skillWriter'
 
 const MAX_PROMOTE_ATTEMPTS = 3
@@ -18,6 +19,8 @@ export function createSkillLearning() {
   const detector = createSignalDetector()
   const attempts = new Map<string, number>()
   const promoting = new Set<string>()
+  const summarizing = new Set<string>()
+  const summaryAttempts = new Map<string, number>()
   const session = { id: '', turns: 0, corrected: false, used: [] as string[], awaiting: [] as string[] }
   let cache: SkillLedger | undefined
   let queue: Promise<unknown> = Promise.resolve()
@@ -58,6 +61,27 @@ export function createSkillLearning() {
     if (patch) await mutate(deps, ledger => applyPromotion(deps, ledger, slug, patch))
   }
 
+  const withSummary = (ledger: SkillLedger, slug: string, summary: string): SkillLedger =>
+    ledger[slug] ? { ...ledger, [slug]: { ...ledger[slug], summary } } : ledger
+
+  const summarize = async (deps: SkillDeps, record: SkillRecord) => {
+    const summary = await summarizeCandidate(record, deps.fs)
+    summarizing.delete(record.slug)
+    if (summary) await mutate(deps, ledger => withSummary(ledger, record.slug, summary))
+  }
+
+  const startSummaries = (deps: SkillDeps, ledger: SkillLedger) => {
+    for (const record of Object.values(ledger)) {
+      const { slug } = record
+      const exhausted = (summaryAttempts.get(slug) ?? 0) >= MAX_PROMOTE_ATTEMPTS
+      if (record.status !== 'candidate' || record.summary || exhausted || summarizing.has(slug)) continue
+      summarizing.add(slug)
+      summaryAttempts.set(slug, (summaryAttempts.get(slug) ?? 0) + 1)
+      void summarize(deps, record)
+    }
+    return ledger
+  }
+
   const startPromotions = (deps: SkillDeps, ledger: SkillLedger) => {
     const { cwd } = deps
     const liveCount = Object.values(ledger).filter(isLive).length
@@ -69,7 +93,7 @@ export function createSkillLearning() {
       attempts.set(slug, (attempts.get(slug) ?? 0) + 1)
       void promote(deps, cwd, slug)
     }
-    return ledger
+    return startSummaries(deps, ledger)
   }
 
   const enterSession = async (deps: SkillDeps, ledger: SkillLedger) => {
