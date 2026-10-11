@@ -37,6 +37,9 @@ import { takeMapNote } from './mapEnsure'
 import { pointAtMap, startMapUpkeep } from './mapWiring'
 import type { Route } from './routing'
 import { makePanel } from './panel'
+import { skillDepsOf } from './skillHost'
+import { createSkillLearning } from './skillLearning'
+import { makeSkillsSection } from './skillsSection'
 import { firstPrompt, relayTarget, threadLines } from './threadLines'
 import { makeThread } from './thread'
 import { dismissAgent, selectAgent, selectedAgent } from './select'
@@ -225,6 +228,10 @@ const mainContext = { tokens: 0 }
 
 const projectDir: { cwd?: string } = {}
 
+const learning = createSkillLearning()
+
+const skillsOf = ($: Parameters<typeof skillDepsOf>[0]) => skillDepsOf($, projectDir.cwd)
+
 const recentMessages = async ($: PlanHost) => {
   const messages = await $.session.messages()
   return Array.isArray(messages) ? recentContext(messages) : ''
@@ -281,6 +288,7 @@ export const register: Register = on => {
     projectDir.cwd = (e as { cwd?: string }).cwd
     await restoreState($).catch(() => undefined)
     hydrateMemories(await loadKnowledge($))
+    void learning.onSessionStart(skillsOf($))
     await $.tool.register(REMEMBER_TOOL)
     await $.tool.register(RECALL_TOOL)
     await $.tool.register(PROGRESS_TOOL)
@@ -331,6 +339,7 @@ export const register: Register = on => {
     if (failure === undefined) recordSuccess(key)
     else if (!failure.includes(CLASSIFIER_OUTAGE)) await noteFailure($, key, failure).catch(() => undefined)
     const succeeded = !result.isError && !result.deny
+    if (!e.agentId) void learning.onTool(skillsOf($), e as Record<string, unknown> & { tool: string }, !succeeded)
     if (succeeded && isImageRead(e as Record<string, unknown>)) countImageRead()
     if (succeeded && e.tool === 'Agent') await learn($, `${e.description}: ${e.prompt}`, result.text).catch(() => undefined)
     if (succeeded && DEDUPED_TOOLS.includes(e.tool)) pendingReads.set(e.tool_use_id, readKey(agent, e as Record<string, unknown>))
@@ -399,8 +408,14 @@ export const register: Register = on => {
     if (!e.agentId) {
       mainTurn.busy = false
       void update($, mainFinishedAtom, () => true)
+      void learning.onTurnComplete(skillsOf($))
     }
     void persistState($).catch(() => undefined)
+    return next(e)
+  })
+
+  on('skill.prompt', async ($, e, next) => {
+    void learning.onSkillPrompt(skillsOf($), e.skill)
     return next(e)
   })
 
@@ -413,6 +428,7 @@ export const register: Register = on => {
     const mapNote = isCommand ? undefined : takeMapNote()
     startMapUpkeep(mapHostOf($), projectDir.cwd, isCommand)
     if (!isCommand && !isTaskNotification(e)) {
+      void learning.onPrompt(skillsOf($), e.text)
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
       void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
@@ -485,6 +501,9 @@ export const register: Register = on => {
       selectAgent(id)
       $.ui.invalidate('ui.render')
     }
+    const SkillsSection = makeSkillsSection(ui)
+    const skills = await learning.ledger(skillsOf($))
+    const changeSkill = (change: Promise<void>) => void change.then(() => $.ui.invalidate('ui.render'))
     const dismiss = (id: string) => {
       dismissAgent(id)
       $.ui.invalidate('ui.render')
@@ -515,6 +534,11 @@ export const register: Register = on => {
           {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} compact={needsCompact(allRows, maxRows)} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
+        {Object.keys(skills).length > 0 && (
+          <Section title="SKILLS" icon={ICONS.steps}>
+            <SkillsSection ledger={skills} onReject={slug => changeSkill(learning.reject(skillsOf($), slug))} onRestore={slug => changeSkill(learning.restore(skillsOf($), slug))} onRevalidate={slug => changeSkill(learning.revalidate(skillsOf($), slug))} />
+          </Section>
+        )}
       </Box>
     )
   })

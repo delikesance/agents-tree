@@ -13,7 +13,7 @@ async function existingPaths(fs: SkillFs, cwd: string, paths: string[]): Promise
   return found.filter((path): path is string => path !== undefined)
 }
 
-const headCommit = async (fs: SkillFs) => (await fs.run(['git', 'rev-parse', 'HEAD']).catch(() => '')).trim()
+export const headCommit = async (fs: SkillFs) => (await fs.run(['git', 'rev-parse', 'HEAD']).catch(() => '')).trim()
 
 export async function writeSkill(fs: SkillFs, cwd: string, record: SkillRecord, synthesized: SynthesizedSkill): Promise<WriteResult> {
   if (!isSafeSlug(record.slug)) return { ok: false, errors: ['invalid slug'] }
