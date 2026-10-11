@@ -54,8 +54,11 @@ const workflowStatus = ({ endedAt }: WorkflowAgent) => (endedAt === undefined ? 
 
 const workflowGroup = (runId: string, members: Node[]): Node => {
   const id = workflowNodeId(runId)
-  const group: Node = { id, label: workflowLabel(runId), status: members.some(m => isLive(m.status)) ? 'running' : 'completed', reveal: revealOf(id), children: members }
-  return { ...group, usage: sumTree(group) }
+  const running = members.filter(m => isLive(m.status)).length
+  const done = members.length - running
+  const elapsed = Math.max(...members.map(m => m.elapsed ?? 0))
+  const summary = { id, label: workflowLabel(runId), status: running ? 'running' : 'completed', goal: `${done} terminés · ${running} en cours`, progress: { done, total: members.length }, elapsed, reveal: revealOf(id), children: members }
+  return { ...summary, usage: sumTree(summary), children: [] }
 }
 
 export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number, workflow: readonly WorkflowAgent[] = [], launches: readonly number[] = []): Node => {
@@ -73,7 +76,7 @@ export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string,
   })
   launches.forEach(at => {
     const id = workflowNodeId(`starting_${at}`)
-    root.children.push({ id, label: 'workflow · démarrage', status: 'running', elapsed: now - at, reveal: revealOf(id), children: [] })
+    root.children.push({ id, label: 'workflow · démarrage', status: 'running', goal: 'lancement des agents…', elapsed: now - at, reveal: revealOf(id), children: [] })
   })
   return { ...root, children: root.children.map(pruneInactive).filter((c): c is Node => !!c) }
 }
