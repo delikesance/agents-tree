@@ -42,6 +42,8 @@ import { createSkillLearning } from './skillLearning'
 import { makeSkillsSection } from './skillsSection'
 import { firstPrompt, relayTarget, threadLines } from './threadLines'
 import { makeThread } from './thread'
+import { makeBadge } from './badge'
+import { PALETTE } from './palette'
 import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
@@ -527,6 +529,12 @@ export const register: Register = on => {
       if (redrawNow) setTimeout(() => $.ui.invalidate('ui.render'), 0)
       void change.then(() => $.ui.invalidate('ui.render'))
     }
+    const { ActionButton } = makeBadge(ui)
+    const finished = allRows.filter(({ node }) => node.id !== MAIN && !isLive(node.status))
+    const dismissFinished = () => {
+      finished.forEach(({ node }) => dismissAgent(node.id))
+      $.ui.invalidate('ui.render')
+    }
     const dismiss = (id: string) => {
       dismissAgent(id)
       $.ui.invalidate('ui.render')
@@ -553,7 +561,7 @@ export const register: Register = on => {
         <Section title="QUOTAS" icon={ICONS.quotas}>
           {quotas.map(quota => <Quota {...quota} />)}
         </Section>
-        <Section title="AGENTS" icon={ICONS.agents}>
+        <Section title="AGENTS" icon={ICONS.agents} aside={finished.length > 0 && <ActionButton id="dismiss-finished" label={`tout retirer ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={dismissFinished} />}>
           {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
