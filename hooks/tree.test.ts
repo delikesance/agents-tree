@@ -83,3 +83,9 @@ test('a child of main has no launcher', () => {
   const rows = flatten(buildTree([agent('m', 'running')], {}, {}, {}, {}, {}, {}, false, 0))
   expect(rows[1]?.node.launchedBy).toBeUndefined()
 })
+
+test('a launched workflow shows as a starting node before its first agent', () => {
+  const [group] = buildTree([], {}, {}, {}, {}, {}, {}, false, 10, [], [4]).children
+  expect(group?.label).toBe('workflow · démarrage')
+  expect(group?.status).toBe('running')
+})
