@@ -62,8 +62,8 @@ export function createSkillLearning() {
   const promote = async (deps: SkillDeps, cwd: string, slug: string) => {
     const record = (await load(deps))[slug]
     const patch = record && (await promotionPatch(deps, cwd, record).catch(() => undefined))
-    promoting.delete(slug)
     if (patch) await mutate(deps, ledger => applyPromotion(deps, ledger, slug, patch))
+    promoting.delete(slug)
   }
 
   const withSummary = (ledger: SkillLedger, slug: string, summary: string): SkillLedger =>
