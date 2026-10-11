@@ -9,6 +9,10 @@ test('suggests an active skill whose cited path is in the prompt', () => {
   expect(skillNudge(ledger(record('arch', { citedPaths: ['hooks/x.ts'] })), 'edit hooks/x.ts')).toContain('/arch')
 })
 
+test('suggests an active skill when its file basename is mentioned', () => {
+  expect(skillNudge(ledger(record('arch', { citedPaths: ['hooks/x.ts'] })), 'fix x.ts')).toContain('/arch')
+})
+
 test('ignores unrelated prompts and non-active skills', () => {
   const skills = ledger(record('a', { citedPaths: ['hooks/x.ts'] }), record('b', { citedPaths: ['hooks/y.ts'], status: 'candidate' }))
   expect(skillNudge(skills, 'edit hooks/y.ts')).toBeUndefined()
