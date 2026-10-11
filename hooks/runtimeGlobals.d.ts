@@ -4,6 +4,7 @@ type TimerHandle = number
 declare var setTimeout: (handler: (...args: never[]) => void, ms?: number) => TimerHandle
 declare var clearTimeout: (timer: TimerHandle) => void
 declare var process: {
+  env?: Record<string, string | undefined>
   on: (event: 'unhandledRejection', listener: (reason: unknown) => void) => void
   off: (event: 'unhandledRejection', listener: (reason: unknown) => void) => void
 }
