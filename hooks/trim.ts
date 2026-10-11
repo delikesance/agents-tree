@@ -6,7 +6,7 @@ const trimOutput = (output: string) => {
   const lines = output.split('\n')
   if (lines.length <= BASH_MAX_LINES) return undefined
   const omitted = lines.length - BASH_HEAD_LINES - BASH_TAIL_LINES
-  const kept = [...lines.slice(0, BASH_HEAD_LINES), `… ${omitted} lignes omises par agent-graph: relire une plage (offset/limit ou grep) si nécessaire …`, ...lines.slice(-BASH_TAIL_LINES)]
+  const kept = [...lines.slice(0, BASH_HEAD_LINES), `… ${omitted} lignes omises par hive: relire une plage (offset/limit ou grep) si nécessaire …`, ...lines.slice(-BASH_TAIL_LINES)]
   return { text: kept.join('\n'), savedTokens: Math.round(lines.slice(BASH_HEAD_LINES, -BASH_TAIL_LINES).join('\n').length / CHARS_PER_TOKEN) }
 }
 

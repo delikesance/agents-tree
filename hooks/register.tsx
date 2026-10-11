@@ -45,19 +45,19 @@ import { trimResultContent } from './trim'
 import { MAIN, buildTree, flatten, isLive, rememberAgents, needsCompact, trackLifecycle, visibleAgents } from './tree'
 import { mainTurn, wakeClock } from './clock'
 
-const usageByAgent = atom({ plugin: 'agent-graph', key: 'usage' } as const, {} as Record<string, AgentUsage>)
+const usageByAgent = atom({ plugin: 'hive', key: 'usage' } as const, {} as Record<string, AgentUsage>)
 
-const activityByAgent = atom({ plugin: 'agent-graph', key: 'activity' } as const, {} as Record<string, string>)
+const activityByAgent = atom({ plugin: 'hive', key: 'activity' } as const, {} as Record<string, string>)
 
-const modelByAgent = atom({ plugin: 'agent-graph', key: 'models' } as const, {} as Record<string, string>)
+const modelByAgent = atom({ plugin: 'hive', key: 'models' } as const, {} as Record<string, string>)
 
-const routeSourceByAgent = atom({ plugin: 'agent-graph', key: 'routes' } as const, {} as Record<string, string>)
+const routeSourceByAgent = atom({ plugin: 'hive', key: 'routes' } as const, {} as Record<string, string>)
 
-const goalByAgent = atom({ plugin: 'agent-graph', key: 'goals' } as const, {} as Record<string, string>)
+const goalByAgent = atom({ plugin: 'hive', key: 'goals' } as const, {} as Record<string, string>)
 
-const trimmedTokens = atom({ plugin: 'agent-graph', key: 'trimmed' } as const, 0)
+const trimmedTokens = atom({ plugin: 'hive', key: 'trimmed' } as const, 0)
 
-const mainFinishedAtom = atom({ plugin: 'agent-graph', key: 'mainFinished' } as const, false)
+const mainFinishedAtom = atom({ plugin: 'hive', key: 'mainFinished' } as const, false)
 
 type StateHost = StateDollar & Pick<CoreEngineInterface, 'store' | 'session'>
 
@@ -95,13 +95,13 @@ const restoreState = async ($: StateHost) => {
   await update($, mainFinishedAtom, () => snapshot.mainFinished as never)
 }
 
-const todosByAgent = atom({ plugin: 'agent-graph', key: 'todos' } as const, {} as Record<string, Todo[]>)
+const todosByAgent = atom({ plugin: 'hive', key: 'todos' } as const, {} as Record<string, Todo[]>)
 
-const progressByAgent = atom({ plugin: 'agent-graph', key: 'progress' } as const, {} as Record<string, GoalProgress>)
+const progressByAgent = atom({ plugin: 'hive', key: 'progress' } as const, {} as Record<string, GoalProgress>)
 
-const TOOL_PREFIX = 'mcp__agent-graph__'
+const TOOL_PREFIX = 'mcp__hive__'
 
-const PANE = 'agent-graph'
+const PANE = 'hive'
 const ROW_CHROME = 12
 const COMPACT_BANNER_ROWS = 30
 const THREAD_CHROME = 8
@@ -272,8 +272,8 @@ const SWITCHES = new Map([
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'agent-graph', description: 'Hive: show running agents with tokens and estimated cost', argumentHint: '[brief|mode|compact|flow on|off]' })
-    void $.ui.open({ id: PANE, title: 'Hive' })
+    await $.command.register({ name: 'hive', description: 'HIVE: show running agents with tokens and estimated cost', argumentHint: '[brief|mode|compact|flow on|off]' })
+    void $.ui.open({ id: PANE, title: 'HIVE' })
     wakeAnimation($)
     resetImageReads()
     resetBreaker()
@@ -287,7 +287,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'agent-graph' }, async ($, e) => {
+  on('command.run', { command: 'hive' }, async ($, e) => {
     const [subcommand, rawValue] = e.args.trim().split(/\s+/)
     const value = rawValue?.toLowerCase()
     const toggle = SWITCHES.get(subcommand ?? '')
@@ -295,9 +295,9 @@ export const register: Register = on => {
       await $.store.set(toggle.key, value === 'on')
       return { text: `${toggle.label} ${value === 'on' ? 'activé' : 'désactivé'}.` }
     }
-    if (toggle) return { text: `${toggle.label}: /agent-graph ${subcommand} on|off` }
-    await $.ui.open({ id: PANE, title: 'Hive' })
-    return { text: 'Hive opened.' }
+    if (toggle) return { text: `${toggle.label}: /hive ${subcommand} on|off` }
+    await $.ui.open({ id: PANE, title: 'HIVE' })
+    return { text: 'HIVE opened.' }
   })
 
   on('session.measure', async ($, e, next) => {
