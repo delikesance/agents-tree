@@ -1,7 +1,7 @@
 import { ensureMap } from './mapEnsure'
 import type { MapIo } from './mapGenerate'
 import { MAP_FILE } from './mapState'
-import { MAP_SUMMARY_MAX_TOKENS } from './mapSkeleton'
+import { MAP_SUMMARY_MAX_TOKENS } from './mapSummaries'
 
 const GIT_TIMEOUT_MS = 10_000
 
