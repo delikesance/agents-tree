@@ -36,6 +36,7 @@ export type SkillRecord = {
   citedPaths: string[]
   headCommit: string
   summary?: string
+  lastError?: string
   createdAt: number
   lastUsedAt?: number
   idleSessions: number
@@ -44,6 +45,8 @@ export type SkillRecord = {
 }
 
 export type SkillLedger = Record<string, SkillRecord>
+
+export type Outcome<T> = { ok: true; value: T } | { ok: false; reason: string }
 
 export type SkillFs = {
   read: (path: string) => Promise<string | undefined>
