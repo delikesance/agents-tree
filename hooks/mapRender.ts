@@ -1,28 +1,30 @@
-import { groupSize, mergeSmallest } from './mapGroups'
 import type { Group } from './mapGroups'
-import { symbolEntry } from './mapSymbols'
+import { mergeSmallest } from './mapMerge'
+import { MAX_SYMBOLS_PER_FILE, symbolEntry } from './mapSymbols'
 import type { Symbols } from './mapSymbols'
 
-const countLabel = ({ files, tests }: Group) => [files.length && `${files.length} files`, tests.length && `${tests.length} tests`].filter(Boolean).join(' + ')
+const SYMBOL_LIMITS = [MAX_SYMBOLS_PER_FILE, 3, 1, 0]
 
-const groupLine = (group: Group, summaries: Map<string, string>, symbols?: Symbols) => {
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
+
+const countLabel = ({ files, tests }: Group) => [files.length && plural(files.length, 'file'), tests.length && plural(tests.length, 'test')].filter(Boolean).join(' + ')
+
+const groupLine = (group: Group, summaries: Map<string, string>, symbols: Symbols, limit?: number) => {
   const purpose = summaries.get(group.name)
-  const entries = symbols ? group.files.flatMap(file => symbolEntry(file, symbols) ?? []) : []
-  const name = group.merged ? `${group.name} +${group.merged} more` : group.name
-  return `- ${name} (${countLabel(group)})${purpose ? `: ${purpose}` : ''}${entries.length ? ` -> ${entries.join('; ')}` : ''}`
+  const entries = limit === undefined ? [] : group.files.flatMap(file => symbolEntry(file, symbols, limit) ?? [])
+  return `- ${group.name} (${countLabel(group)})${purpose ? `: ${purpose}` : ''}${entries.length ? ` -> ${entries.join('; ')}` : ''}`
 }
 
-const largest = (groups: Group[]) => [...groups].sort((a, b) => groupSize(b) - groupSize(a))[0]
-
 export const renderGroups = (groups: Group[], summaries: Map<string, string>, symbols: Symbols, charBudget: number) => {
-  const withoutSymbols = new Set<string>()
+  const render = (shown: Group[], limit?: number) => shown.map(group => groupLine(group, summaries, symbols, limit))
+  const fits = (lines: string[]) => lines.join('\n').length <= charBudget
+  const withSymbols = SYMBOL_LIMITS.map(limit => render(groups, limit)).find(fits)
+  if (withSymbols) return withSymbols
   let shown = groups
-  const render = () => shown.map(group => groupLine(group, summaries, withoutSymbols.has(group.name) ? undefined : symbols))
-  while (render().join('\n').length > charBudget) {
-    const widest = largest(shown.filter(group => !withoutSymbols.has(group.name)))
-    if (widest) withoutSymbols.add(widest.name)
-    else if (shown.length > 1) shown = mergeSmallest(shown)
-    else break
+  while (!fits(render(shown))) {
+    const merged = mergeSmallest(shown)
+    if (merged === shown) break
+    shown = merged
   }
-  return render()
+  return render(shown)
 }
