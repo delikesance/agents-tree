@@ -29,7 +29,7 @@ test('groups show code and test counts, symbols and purposes', () => {
 test('commands and deep entry points are listed, docs are not', () => {
   const map = build({ testCommand: 'bun test' })
   expect(map).toContain('- Test: `bun test`')
-  expect(map).toContain('## Entry points\n- hooks/register.tsx\n- src/main.rs\n- crates/x/src/main.rs\n- crates/x/src/lib.rs\n- crates/y/src/main.rs')
+  expect(map).toContain('## Entry points\n- src/main.rs\n- crates/x/src/main.rs\n- crates/y/src/main.rs\n- hooks/register.tsx\n- crates/x/src/lib.rs')
   expect(map).not.toContain('## Docs')
 })
 
