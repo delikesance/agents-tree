@@ -4,7 +4,7 @@ import { renderGroups } from './mapRender'
 import { commitLine } from './mapState'
 import type { Symbols } from './mapSymbols'
 
-const MAX_MAP_CHARS = 6_000
+const MAX_MAP_CHARS = 8_000
 
 const section = (title: string, lines: string[]) => (lines.length ? ['', `## ${title}`, ...lines] : [])
 
