@@ -3,7 +3,7 @@ import type { Group } from './mapGroups'
 import { symbolEntry } from './mapSymbols'
 import type { Symbols } from './mapSymbols'
 
-export const MAP_SUMMARY_MAX_TOKENS = 800
+export const MAP_SUMMARY_MAX_TOKENS = 1600
 
 const SAMPLE_FILES = 8
 const SUMMARY_MAX = 120
