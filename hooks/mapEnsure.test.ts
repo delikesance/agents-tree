@@ -35,7 +35,7 @@ test('a missing map is generated and noted once', async () => {
   await ensureMap(io, 'missing')
   expect(written).toHaveLength(1)
   expect(written[0]?.split('\n')[0]).toBe(`<!-- map: ${HEAD} -->`)
-  expect(written[0]).toContain('- src/ -> 2 files (.ts): code')
+  expect(written[0]).toContain('- src/ (2 files): code')
   expect(takeMapNote()).toContain('created')
   expect(takeMapNote()).toBeUndefined()
 })
@@ -77,7 +77,7 @@ test('a model failure writes the map without summaries', async () => {
   const { io, written } = setup({ summary: new Error('down') })
   await ensureMap(io, 'failing')
   expect(written).toHaveLength(1)
-  expect(written[0]).toContain('- src/ -> 2 files (.ts)\n')
+  expect(written[0]).toContain('- src/ (2 files)\n')
   takeMapNote()
 })
 

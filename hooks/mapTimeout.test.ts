@@ -29,7 +29,7 @@ test('a model call that never settles times out and the map is written once, wit
   expect(waits).toContain(SUMMARY_TIMEOUT_MS)
   expect(written).toHaveLength(1)
   expect(written[0]?.[0]).toBe(MAP_FILE)
-  expect(written[0]?.[1]).toContain('- src/ -> 2 files (.ts)\n')
+  expect(written[0]?.[1]).toContain('- src/ (2 files)\n')
 })
 
 test('nothing is written when listing files fails, so no half-written map is left', async () => {
