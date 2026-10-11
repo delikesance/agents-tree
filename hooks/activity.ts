@@ -16,6 +16,8 @@ export const stepsToTodos = (steps: readonly string[], done: number): Todo[] =>
   steps.map((content, index) => ({ content, status: index < done ? 'completed' : index === done ? 'in_progress' : 'pending' }))
 export const toTodos = (todos: readonly Todo[]): Todo[] => todos.map(({ content, status }) => ({ content, status }))
 export const TASK_STATUS_DONE = 'completed'
+export const hasUnfinished = (progress: GoalProgress | undefined) => progress !== undefined && progress.done < progress.total
+export const hasUnfinishedTodos = (todos: readonly Todo[] | undefined) => todos?.some(t => t.status !== TASK_STATUS_DONE) ?? false
 export const countTask = (current: GoalProgress | undefined, { done = 0, total = 0 }: Partial<GoalProgress>): GoalProgress => ({
   done: (current?.done ?? 0) + done,
   total: (current?.total ?? 0) + total,

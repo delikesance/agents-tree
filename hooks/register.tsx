@@ -5,7 +5,7 @@ import type { AgentUsage, GoalProgress } from '../types'
 
 import { PROGRESS_SECTION, PROGRESS_TOOL } from './progress'
 import type { Todo } from './activity'
-import { TASK_STATUS_DONE, countTask, describeCall, stepsToTodos, todoProgress, toTodos } from './activity'
+import { TASK_STATUS_DONE, countTask, describeCall, hasUnfinished, hasUnfinishedTodos, stepsToTodos, todoProgress, toTodos } from './activity'
 import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailure, recordSuccess, resetBreaker, startCall, stopped } from './breaker'
 import { stashFlow, takeFlow } from './backgroundFlow'
 import { BRIEF_KEY, BRIEF_TIMEOUT_MS, memoryBrief, withTimeout } from './brief'
@@ -452,8 +452,8 @@ export const register: Register = on => {
     if (!isCommand && !isTaskNotification(e)) {
       void learning.onPrompt(skillsOf($), e.text)
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
-      void update($, progressByAgent, ({ [MAIN]: previous, ...others }) => (previous && previous.done < previous.total ? { ...others, [MAIN]: previous } : others))
-      void update($, todosByAgent, ({ [MAIN]: previous, ...others }) => (previous?.some(todo => todo.status !== 'completed') ? { ...others, [MAIN]: previous } : others))
+      void update($, progressByAgent, ({ [MAIN]: previous, ...others }) => (hasUnfinished(previous) ? { ...others, [MAIN]: previous } : others))
+      void update($, todosByAgent, ({ [MAIN]: previous, ...others }) => (hasUnfinishedTodos(previous) ? { ...others, [MAIN]: previous } : others))
     }
     if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
