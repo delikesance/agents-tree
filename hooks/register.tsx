@@ -523,7 +523,10 @@ export const register: Register = on => {
     }
     const SkillsSection = makeSkillsSection(ui)
     const skills = await learning.ledger(skillsOf($))
-    const changeSkill = (change: Promise<void>) => void change.then(() => $.ui.invalidate('ui.render'))
+    const changeSkill = (change: Promise<void>, redrawNow = false) => {
+      if (redrawNow) setTimeout(() => $.ui.invalidate('ui.render'), 0)
+      void change.then(() => $.ui.invalidate('ui.render'))
+    }
     const dismiss = (id: string) => {
       dismissAgent(id)
       $.ui.invalidate('ui.render')
@@ -555,7 +558,7 @@ export const register: Register = on => {
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
         <Section title="SKILLS" icon={ICONS.steps}>
-          <SkillsSection ledger={skills} onAccept={slug => changeSkill(learning.accept(skillsOf($), slug))} onReject={slug => changeSkill(learning.reject(skillsOf($), slug))} onRestore={slug => changeSkill(learning.restore(skillsOf($), slug))} onRevalidate={slug => changeSkill(learning.revalidate(skillsOf($), slug))} />
+          <SkillsSection ledger={skills} isBusy={learning.isPromoting} onAccept={slug => changeSkill(learning.accept(skillsOf($), slug), true)} onReject={slug => changeSkill(learning.reject(skillsOf($), slug))} onRestore={slug => changeSkill(learning.restore(skillsOf($), slug))} onRevalidate={slug => changeSkill(learning.revalidate(skillsOf($), slug))} />
         </Section>
       </Box>
     )

@@ -116,6 +116,7 @@ export function createSkillLearning() {
 
   return {
     ledger: (deps: SkillDeps) => load(deps),
+    isPromoting: (slug: string) => promoting.has(slug),
     onSessionStart: (deps: SkillDeps) => run(deps, ledger => ledger),
     onTool: (deps: SkillDeps, call: Record<string, unknown> & { tool: string }, failed: boolean) =>
       run(deps, ledger => learn(deps, ledger, detector.push({ type: 'tool', sessionId: session.id, at: deps.now(), tool: call.tool, files: filesOf(call), failed }))),
