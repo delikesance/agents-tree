@@ -126,7 +126,7 @@ const requestSummary = async ($: Completer, request: string, context?: string) =
   return truncateGoal(label && !isQuestion(label) ? label : (context ?? firstLine(request)))
 }
 
-const JEV_TIMEOUT_MS = 1000
+const JEV_TIMEOUT_MS = 5000
 const CLASSIFIER_OUTAGE = 'auto mode classifier gave no verdict'
 
 const jevChoice = async ($: JevHost, state: Record<string, unknown>, instructions: string, criteria: Record<string, string>): Promise<JevChoice> => {
@@ -203,7 +203,7 @@ const buildBrief = (text: string) => memoryBrief(relevantMemories(text))
 
 type Submission = { text: string; turnId?: string; origin: { kind: string } }
 
-const isTaskNotification = (e: Submission) => e.text.startsWith('<task-notification>') || e.text.startsWith('<pasted_content')
+const isTaskNotification = (e: Submission) => e.text.startsWith('<task-notification>')
 const isComposerPrompt = (e: Submission) => !e.text.startsWith('/') && !e.turnId && e.origin.kind === 'composer'
 
 const isBriefable = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && !!(await $.store.get(BRIEF_KEY))
@@ -329,7 +329,7 @@ export const register: Register = on => {
     if (WRITING_TOOLS.includes(e.tool) || (e.tool === 'Bash' && !result.isReadOnly)) forgetReads()
     const failure = result.isError ? String(result.text ?? 'error') : undefined
     if (failure === undefined) recordSuccess(key)
-    else if (!failure.includes(CLASSIFIER_OUTAGE)) void noteFailure($, key, failure).catch(() => undefined)
+    else if (!failure.includes(CLASSIFIER_OUTAGE)) await noteFailure($, key, failure).catch(() => undefined)
     const succeeded = !result.isError && !result.deny
     if (succeeded && isImageRead(e as Record<string, unknown>)) countImageRead()
     if (succeeded && e.tool === 'Agent') await learn($, `${e.description}: ${e.prompt}`, result.text).catch(() => undefined)
@@ -415,11 +415,12 @@ export const register: Register = on => {
     if (!isCommand && !isTaskNotification(e)) {
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
+      void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
     }
     if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
     const session = await $.session.id()
-    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), onlyIfChanged(session, 'ultracode', isComposerPrompt(e) ? ultracodeNote(e.text) : undefined), earlierFlow, onlyIfChanged(session, 'map', mapNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
+    const added = [onlyIfChanged(session, 'brief', brief), onlyIfChanged(session, 'mode', mode), isComposerPrompt(e) ? ultracodeNote(e.text) : undefined, earlierFlow, onlyIfChanged(session, 'map', mapNote), isCommand ? undefined : contextNudge(mainContext.tokens, session)].filter((text): text is string => !!text)
     if (projectDir.cwd) void recordPrompt(fsOf($), { hookLatencyMs: Date.now() - started, injectedChars: added.reduce((sum, text) => sum + text.length, 0), modelCalls: Number(flowWanted) + Number(modeAsked) }, projectDir.cwd)
     return next(added.length ? { ...e, context: [...(e.context ?? []), ...added] } : e)
   })
