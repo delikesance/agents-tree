@@ -10,8 +10,11 @@ const SUMMARY_MAX = 120
 
 export const SUMMARY_PROMPT = `For each group below, write one line "<group>: <what it is for, 12 words max>". Reply with those lines only, one per group, nothing else. Describe only the files listed after each group name (test files count); never mention missing or stray files.\n\n`
 
+export const evenSample = <T>(items: T[], count = SAMPLE_FILES) =>
+  items.length <= count ? items : Array.from({ length: count }, (_, i) => items[Math.floor((i * items.length) / count)] as T)
+
 export const summaryInput = (groups: Group[], symbols: Symbols) =>
-  groups.map(({ name, files, tests }) => `${name}: ${(files.length ? files : tests).slice(0, SAMPLE_FILES).map(file => symbolEntry(file, symbols) ?? baseName(file)).join(', ')}`).join('\n')
+  groups.map(({ name, files, tests }) => `${name}: ${evenSample(files.length ? files : tests).map(file => symbolEntry(file, symbols) ?? baseName(file)).join(', ')}`).join('\n')
 
 const cleanName = (name: string) => name.replace(/^[-*\s`]+|[\s`/]+$/g, '')
 
