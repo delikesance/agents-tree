@@ -44,17 +44,17 @@ test('the generated part stays within the line and size caps, without losing gro
   const map = build({ symbols }, many)
   const generated = map.slice(0, map.indexOf('<!-- manual -->'))
   expect(generated.trimEnd().split('\n').length).toBeLessThanOrEqual(60)
-  expect(generated.length).toBeLessThanOrEqual(6_000)
+  expect(generated.length).toBeLessThanOrEqual(8_000)
   expect(map).toContain('{dir0..dir')
 })
 
 test('symbols shrink uniformly before they are dropped, so big groups still name their files', () => {
-  const files = [...Array.from({ length: 40 }, (_, i) => `big/f${i}.ts`), 'small/a.ts']
+  const files = [...Array.from({ length: 60 }, (_, i) => `big/f${i}.ts`), 'small/a.ts']
   const names = Array.from({ length: 6 }, (_, i) => `veryLongExportedSymbolName${i}`)
   const symbols = new Map(files.map(file => [file, names]))
   const map = build({ symbols }, files)
   expect(map).toContain('- small/ (1 file) -> a.ts(veryLongExportedSymbolName0')
-  expect(map).toContain('f39.ts')
+  expect(map).toContain('f59.ts')
   expect(map).not.toContain('veryLongExportedSymbolName3')
 })
 

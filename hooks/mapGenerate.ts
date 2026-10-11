@@ -15,6 +15,7 @@ export const SUMMARY_TIMEOUT_MS = 20_000
 export type MapIo = MapReader & {
   write: (path: string, text: string) => Promise<void>
   complete: (prompt: string) => Promise<string | undefined>
+  summaryTimeoutMs?: number
 }
 
 const trackedFiles = async (run: Run) => {
@@ -23,12 +24,13 @@ const trackedFiles = async (run: Run) => {
   return stdout.split('\0').filter(Boolean)
 }
 
-const summariesOf = async (complete: MapIo['complete'], groups: Group[], symbols: Symbols) => {
-  const text = await withTimeout(complete(SUMMARY_PROMPT + summaryInput(groups, symbols)), SUMMARY_TIMEOUT_MS).catch(() => undefined)
+const summariesOf = async ({ complete, summaryTimeoutMs = SUMMARY_TIMEOUT_MS }: MapIo, groups: Group[], symbols: Symbols) => {
+  const text = await withTimeout(complete(SUMMARY_PROMPT + summaryInput(groups, symbols)), summaryTimeoutMs).catch(() => undefined)
   return parseSummaries(text ?? '', groups)
 }
 
-export const writeMap = async ({ run, read, write, complete }: MapIo, head: string) => {
+export const writeMap = async (io: MapIo, head: string) => {
+  const { run, read, write } = io
   const files = await trackedFiles(run)
   const groups = groupFiles(files)
   const [testCommand, symbols, existing] = await Promise.all([
@@ -36,6 +38,6 @@ export const writeMap = async ({ run, read, write, complete }: MapIo, head: stri
     readSymbols(read, groups.flatMap(group => group.files)),
     read(MAP_FILE).catch(() => undefined),
   ])
-  const summaries = await summariesOf(complete, groups, symbols)
+  const summaries = await summariesOf(io, groups, symbols)
   await write(MAP_FILE, buildMap({ head, files, groups, testCommand, summaries, symbols, manual: manualBlock(existing) }))
 }
