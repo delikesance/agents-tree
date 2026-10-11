@@ -119,8 +119,9 @@ export function createSkillLearning() {
       const { cwd } = deps
       if (!cwd) return 'Aucun projet ouvert.'
       const verdicts = await discoverVerdicts(deps, cwd, await load(deps))
-      if (apply) await mutate(deps, ledger => adoptVerdicts(deps, cwd, ledger, verdicts))
-      return verdicts.length ? verdictLines(verdicts) : 'Aucun candidat dans CLAUDE.md / README.md.'
+      if (apply) void mutate(deps, ledger => adoptVerdicts(deps, cwd, ledger, verdicts))
+      if (!verdicts.length) return 'Aucun candidat dans CLAUDE.md / README.md.'
+      return apply ? `${verdictLines(verdicts)}\nRédaction des skills ✔ en arrière-plan.` : verdictLines(verdicts)
     },
     reject: (deps: SkillDeps, slug: string) =>
       mutate(deps, async ledger => {
