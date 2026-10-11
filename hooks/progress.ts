@@ -1,6 +1,6 @@
 export const PROGRESS_SECTION = {
   id: 'hive:progress',
-  text: 'Progress bar (mandatory): for any task of 3 or more steps, and whenever you have no task-list tool (TodoWrite/TaskCreate), call mcp__hive__progress with {done: 0, total, steps} where steps lists every step as a short label, in the same message as your first working tool calls; update it (same steps) when a step finishes, always batched with the next tool calls and never as a turn of its own. Load it with ToolSearch if it is deferred.',
+  text: 'Todo list (mandatory): before any other work on a task of 2 or more steps, write the full step list first: TodoWrite (or TaskCreate) when you have it, otherwise mcp__hive__progress with {done: 0, total, steps} (steps = one short label per step). Make it in the same message as your first working tool calls, so it costs no extra turn, but never start without it. Keep it current: mark a step done (same steps) in the message that starts the next one. Load mcp__hive__progress with ToolSearch if it is deferred.'',
   scope: 'session',
 } as const
 
