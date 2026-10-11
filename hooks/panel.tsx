@@ -104,7 +104,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
     </Box>
   )
 
-  const CompactCard = ({ node, route, onOpen, onDismiss }: { node: Node; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
+  const CompactCard = ({ node, route, onOpen, onDismiss, onStop }: { node: Node; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void; onStop?: (id: string) => void }) => {
     const kind = cardKind(node)
     const status = STATUSES[kind]
     const done = kind === 'done'
@@ -122,6 +122,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
             {node.usage && <Text color={PALETTE.muted}>{shortModel(node.usage.model)}{route && ` · ${route}`}  {formatCost(node.usage.cost)}</Text>}
             <Box columnGap={ACTION_GAP}>
               {!node.segments && <ActionButton id={`open:${node.id}`} label="ouvrir ▸" background={PALETTE.rule} onPress={() => onOpen(node.id)} />}
+              {isLive(node.status) && onStop && <ActionButton id={`stop:${node.id}`} label={`arrêter ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={() => onStop(node.id)} />}
               {!isLive(node.status) && <ActionButton id={`dismiss:${node.id}`} label={`retirer ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={() => onDismiss(node.id)} />}
             </Box>
           </Box>
@@ -174,7 +175,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
     )
   }
 
-  const AgentCard = ({ node, depth, ancestorsLast = [], route, onOpen, onDismiss }: { node: Node; depth: number; last: boolean; ancestorsLast?: boolean[]; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
+  const AgentCard = ({ node, depth, ancestorsLast = [], route, onOpen, onDismiss, onStop }: { node: Node; depth: number; last: boolean; ancestorsLast?: boolean[]; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void; onStop?: (id: string) => void }) => {
     const lines = cardHeight(node)
     return (
       <Box>
@@ -183,7 +184,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
             <Text color={PALETTE.muted}>{Array.from({ length: lines }, () => mark).join('\n')}</Text>
           </Box>
         ))}
-        {node.id === MAIN ? <MainCard node={node} route={route} /> : <CompactCard node={node} route={route} onOpen={onOpen} onDismiss={onDismiss} />}
+        {node.id === MAIN ? <MainCard node={node} route={route} /> : <CompactCard node={node} route={route} onOpen={onOpen} onDismiss={onDismiss} onStop={onStop} />}
       </Box>
     )
   }

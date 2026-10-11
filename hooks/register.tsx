@@ -48,7 +48,7 @@ import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
 import { MAIN, buildTree, flatten, isLive, rememberAgents, trackLifecycle, visibleAgents } from './tree'
-import { finishWorkflowAgent, recordWorkflowAgent, recordWorkflowLaunch, workflowAgents, workflowLaunches } from './workflowRuns'
+import { finishWorkflowAgent, recordWorkflowAgent, recordWorkflowLaunch, recordWorkflowTask, workflowAgents, workflowLaunches, workflowTaskId } from './workflowRuns'
 import { mainTurn, wakeClock } from './clock'
 
 const usageByAgent = atom({ plugin: 'hive', key: 'usage' } as const, {} as Record<string, AgentUsage>)
@@ -377,6 +377,7 @@ export const register: Register = on => {
     }
     const result = await next(e)
     if (WRITING_TOOLS.includes(e.tool) || (e.tool === 'Bash' && !result.isReadOnly)) forgetReads()
+    if (e.tool === 'Workflow' && !e.agentId && !result.isError) recordWorkflowTask(String(result.text ?? ''))
     const failure = result.isError ? String(result.text ?? 'error') : undefined
     if (failure === undefined) recordSuccess(key)
     else if (!failure.includes(CLASSIFIER_OUTAGE)) await noteFailure($, key, failure).catch(() => undefined)
@@ -535,6 +536,10 @@ export const register: Register = on => {
       finished.forEach(({ node }) => dismissAgent(node.id))
       $.ui.invalidate('ui.render')
     }
+    const stopWorkflow = (id: string) => {
+      const task_id = workflowTaskId(id)
+      if (task_id) void $.tool.call({ tool: 'TaskStop', task_id } as never).then(() => $.ui.invalidate('ui.render'))
+    }
     const dismiss = (id: string) => {
       dismissAgent(id)
       $.ui.invalidate('ui.render')
@@ -562,7 +567,7 @@ export const register: Register = on => {
           {quotas.map(quota => <Quota {...quota} />)}
         </Section>
         <Section title="AGENTS" icon={ICONS.agents} aside={finished.length > 0 && <ActionButton id="dismiss-finished" label={`tout retirer ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={dismissFinished} />}>
-          {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
+          {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} route={routes[node.id]} onOpen={open} onDismiss={dismiss} onStop={workflowTaskId(node.id) ? stopWorkflow : undefined} />)}
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
         <Section title="SKILLS" icon={ICONS.steps}>
