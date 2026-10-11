@@ -538,7 +538,15 @@ export const register: Register = on => {
     }
     const stopWorkflow = (id: string) => {
       const task_id = workflowTaskId(id)
-      if (task_id) void $.tool.call({ tool: 'TaskStop', task_id } as never).then(() => $.ui.invalidate('ui.render'))
+      if (!task_id) return
+      const failure = (message: string) => $.ui.toast(`Arrêt du flow impossible : ${message}`)
+      $.tool.call({ tool: 'TaskStop', task_id } as never)
+        .then((res: { deny?: string; isError?: boolean; text?: string }) => {
+          if (res.deny) failure(res.deny)
+          else if (res.isError) failure(res.text ?? 'erreur inconnue')
+        })
+        .catch((err: unknown) => failure(String(err)))
+        .finally(() => $.ui.invalidate('ui.render'))
     }
     const dismiss = (id: string) => {
       dismissAgent(id)
