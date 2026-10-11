@@ -1,4 +1,4 @@
-import type { SkillFs, SkillRecord } from './skillTypes'
+import { SYNTHESIS_ENV, type SkillFs, type SkillRecord } from './skillTypes'
 
 export type SynthesizedSkill = { description: string; steps: string[] }
 
@@ -44,7 +44,7 @@ const timeoutAfter = (seconds: number) => new Promise<never>((_, reject) => setT
 
 export async function synthesizeSkill(record: SkillRecord, fs: SkillFs): Promise<SynthesizedSkill | undefined> {
   try {
-    const command = ['claude', '-p', '--model', SYNTHESIS_MODEL, buildPrompt(record)]
+    const command = ['env', `${SYNTHESIS_ENV}=1`, 'claude', '-p', '--model', SYNTHESIS_MODEL, buildPrompt(record)]
     return parseSynthesis(await Promise.race([fs.run(command), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)]))
   } catch {
     return undefined

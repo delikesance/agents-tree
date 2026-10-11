@@ -32,7 +32,7 @@ test('synthesizeSkill: runs the model command and parses output', async () => {
     return '{"description":"Use when x","steps":["a"]}'
   })
   expect(await synthesizeSkill(record, fs)).toEqual({ description: 'Use when x', steps: ['a'] })
-  expect(command.slice(0, 4)).toEqual(['claude', '-p', '--model', 'haiku'])
+  expect(command.slice(0, 6)).toEqual(['env', 'HIVE_SKILL_SYNTHESIS=1', 'claude', '-p', '--model', 'haiku'])
 })
 
 test('synthesizeSkill: undefined when the command throws', async () => {

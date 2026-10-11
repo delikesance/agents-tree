@@ -18,7 +18,7 @@ const harness = () => {
       read: async path => files[path],
       write: async (path, text) => void (files[path] = text),
       remove: async path => void delete files[path],
-      run: async command => (command[0] === 'claude' ? SYNTHESIS : command[1] === 'diff' ? state.diff : 'head1\n'),
+      run: async command => (command.includes('claude') ? SYNTHESIS : command[1] === 'diff' ? state.diff : 'head1\n'),
     },
     cwd: CWD,
     now: () => ++state.clock,
@@ -127,7 +127,7 @@ test('reject deletes the file and the same pattern never returns', async () => {
 test('a failed synthesis keeps the candidate and retries later', async () => {
   const h = harness()
   const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command[0] === 'claude' ? 'not json' : run(command))
+  h.deps.fs.run = async command => (command.includes('claude') ? 'not json' : run(command))
   const slug = await learnSkill(h)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('candidate')
   h.deps.fs.run = run
