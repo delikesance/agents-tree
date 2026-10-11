@@ -12,5 +12,14 @@ In-TUI plugin that shows the agents of a session (tree, cost, quotas, activity) 
 - `hooks/panel.tsx` list cards; `hooks/thread.tsx` thread view; `hooks/threadLines.ts` message to line mapping; `hooks/select.ts` selected agent.
 - `preview/print-panel.tsx` prints the list as ANSI.
 
+## Skill learning
+HIVE watches the main session for repeated work and turns it into project skills.
+- Signals: a repeated tool sequence ending in an edit, a retry that finally succeeded, a long exploration before the first edit, a user correction. Similar signals are grouped in a ledger kept in the plugin store (`skills`).
+- A group seen in 3 sessions (`PROMOTE_MIN_SESSIONS`) is synthesized and written to `<project>/.claude/skills/<slug>/SKILL.md` (at most 20 live skills). A failed synthesis keeps the candidate and is retried, 3 attempts at most.
+- Use is counted from the `skill.prompt` event; a use is clean when the next prompt is not a correction. A skill unused for 10 sessions (`ARCHIVE_AFTER_IDLE_SESSIONS`), or with fewer than half clean uses over 5 or more uses, is archived and its file removed.
+- A skill whose cited files changed in git since it was written turns stale; revalidate it from the SKILLS section of the pane.
+- Veto: `rejeter` in the SKILLS section deletes the file and the same pattern is never proposed again; `restaurer` brings a rejected or archived skill back as a candidate.
+- Skills written by hand are not in the ledger and are never touched.
+
 ## Tests
 Tests import `claude-code/testing` (provided by the host). Locally, put `export { expect, test } from 'bun:test'` in `node_modules/claude-code/testing.ts`, run `bun test hooks/`, then delete `node_modules`.
