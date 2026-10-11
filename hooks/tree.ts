@@ -10,7 +10,7 @@ import type { WorkflowAgent } from './workflowRuns'
 export const MAIN = 'main'
 export const isLive = (status: string) => status === 'running' || status === 'waiting' || status === 'pending'
 
-export type Node = { id: string; label: string; status: string; usage?: AgentUsage; activity?: string; model?: string; goal?: string; progress?: GoalProgress; todos?: Todo[]; elapsed?: number; reveal: number; finished?: boolean; launchedBy?: string; children: Node[] }
+export type Node = { id: string; label: string; status: string; usage?: AgentUsage; activity?: string; model?: string; goal?: string; progress?: GoalProgress; todos?: Todo[]; elapsed?: number; reveal: number; finished?: boolean; segments?: boolean[]; launchedBy?: string; children: Node[] }
 
 export type TrackedAgent = Omit<AgentInfo, 'status'> & { status: string }
 
@@ -52,12 +52,17 @@ const revealOf = (id: string) => (isDismissed(id) ? 0 : 1)
 
 const workflowStatus = ({ endedAt }: WorkflowAgent) => (endedAt === undefined ? 'running' : 'completed')
 
-const workflowGroup = (runId: string, members: Node[]): Node => {
+const workflowGoal = (members: readonly WorkflowAgent[]) => {
+  const current = members.filter(m => m.endedAt === undefined).pop()
+  return current ? `▸ ${current.label}` : 'terminé'
+}
+
+const workflowGroup = (runId: string, agents: WorkflowAgent[], members: Node[]): Node => {
   const id = workflowNodeId(runId)
-  const running = members.filter(m => isLive(m.status)).length
-  const done = members.length - running
+  const segments = members.map(m => !isLive(m.status))
+  const done = segments.filter(Boolean).length
   const elapsed = Math.max(...members.map(m => m.elapsed ?? 0))
-  const summary = { id, label: workflowLabel(runId), status: running ? 'running' : 'completed', goal: `${done} terminés · ${running} en cours`, progress: { done, total: members.length }, elapsed, reveal: revealOf(id), children: members }
+  const summary = { id, label: workflowLabel(runId), status: done < members.length ? 'running' : 'completed', goal: workflowGoal(agents), segments, progress: { done, total: members.length }, elapsed, reveal: revealOf(id), children: members }
   return { ...summary, usage: sumTree(summary), children: [] }
 }
 
@@ -70,9 +75,9 @@ export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string,
     if (parent !== root) nodes.get(a.id)!.launchedBy = parent.label
     parent.children.push(nodes.get(a.id)!)
   })
-  groupByRun(workflow).forEach((members, runId) => {
-    const children = members.map(m => ({ ...nodeFor(m.id, `${agentName(m.id)} · ${m.type}`, workflowStatus(m), (m.endedAt ?? now) - m.startedAt), launchedBy: workflowLabel(runId) }))
-    root.children.push(workflowGroup(runId, children))
+  groupByRun(workflow).forEach((group, runId) => {
+    const children = group.map(m => ({ ...nodeFor(m.id, `${agentName(m.id)} · ${m.type}`, workflowStatus(m), (m.endedAt ?? now) - m.startedAt), launchedBy: workflowLabel(runId) }))
+    root.children.push(workflowGroup(runId, group, children))
   })
   launches.forEach(at => {
     const id = workflowNodeId(`starting_${at}`)

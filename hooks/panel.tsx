@@ -120,6 +120,12 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
               <Box marginY={compact ? 0 : GOAL_MARGIN_Y}>
                 <Text bold color={PALETTE.text}>{done ? ICONS.done : ICONS.goal} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text>
               </Box>
+              {!compact && !!node.segments?.length && (
+                <Text>
+                  {node.segments.map(done => <Text color={done ? PALETTE.green : PALETTE.yellow}>{'▰ '}</Text>)}
+                  <Text color={PALETTE.muted}> {node.progress?.done}/{node.progress?.total} terminés</Text>
+                </Text>
+              )}
               {!compact && !!node.todos?.length && <TodoList todos={node.todos} animated={kind === 'running'} />}
               <Box justifyContent="space-between" alignItems="center">
                 <Box>

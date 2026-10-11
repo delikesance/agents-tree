@@ -1,4 +1,4 @@
-export type WorkflowAgent = { id: string; runId: string; agentIndex: number; type: string; startedAt: number; endedAt?: number }
+export type WorkflowAgent = { id: string; runId: string; agentIndex: number; type: string; label: string; startedAt: number; endedAt?: number }
 
 const agents = new Map<string, WorkflowAgent>()
 const LAUNCH_GRACE_MS = 60_000

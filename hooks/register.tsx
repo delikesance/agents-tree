@@ -473,7 +473,7 @@ export const register: Register = on => {
       if (model) void update($, modelByAgent, all => ({ ...all, [agentId]: model }))
       if (route) void update($, routeSourceByAgent, all => ({ ...all, [agentId]: route.source }))
       void setGoal($, agentId, e.prompt).catch(() => undefined)
-      if (e.workflow) recordWorkflowAgent({ id: agentId, ...e.workflow, type: e.subagentType ?? 'agent', startedAt: Date.now() })
+      if (e.workflow) recordWorkflowAgent({ id: agentId, ...e.workflow, type: e.subagentType ?? 'agent', label: e.description, startedAt: Date.now() })
     }
     return result
   })
