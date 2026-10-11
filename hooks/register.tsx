@@ -203,7 +203,7 @@ const buildBrief = (text: string) => memoryBrief(relevantMemories(text))
 
 type Submission = { text: string; turnId?: string; origin: { kind: string } }
 
-const isTaskNotification = (e: Submission) => e.text.startsWith('<task-notification>')
+const isTaskNotification = (e: Submission) => e.text.startsWith('<task-notification>') || e.text.startsWith('<pasted_content')
 const isComposerPrompt = (e: Submission) => !e.text.startsWith('/') && !e.turnId && e.origin.kind === 'composer'
 
 const isBriefable = async ($: BriefHost, e: Submission) => isComposerPrompt(e) && !!(await $.store.get(BRIEF_KEY))
@@ -415,7 +415,6 @@ export const register: Register = on => {
     if (!isCommand && !isTaskNotification(e)) {
       void update($, goalByAgent, all => ({ ...all, [MAIN]: truncateGoal(firstLine(e.text)) }))
       void update($, progressByAgent, ({ [MAIN]: _previous, ...others }) => others)
-      void update($, todosByAgent, ({ [MAIN]: _previous, ...others }) => others)
     }
     if (flowWanted) void startFlow($, { explore: input => $.tool.call(input), spawn: input => $.agent.spawn(input) }, e).catch(() => undefined)
     const [brief, mode] = await Promise.all([briefFor($, e).catch(() => undefined), modeAsked ? withTimeout(modeFor($, e), BRIEF_TIMEOUT_MS).catch(() => undefined) : undefined])
