@@ -4,6 +4,8 @@ import { forgetDismissed, isDismissed } from './select'
 import type { AgentInfo } from 'claude-code'
 import type { AgentUsage, GoalProgress } from '../types'
 import type { Todo } from './activity'
+import { groupByRun, workflowLabel, workflowNodeId } from './workflowRuns'
+import type { WorkflowAgent } from './workflowRuns'
 
 export const MAIN = 'main'
 export const isLive = (status: string) => status === 'running' || status === 'waiting' || status === 'pending'
@@ -48,15 +50,26 @@ const elapsedOf = (id: string, now: number) => {
 
 const revealOf = (id: string) => (isDismissed(id) ? 0 : 1)
 
-export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number): Node => {
-  const nodes = new Map<string, Node>(
-    agents.map(a => [a.id, { id: a.id, label: `${agentName(a.id)} · ${a.type}`, status: a.status, usage: usage[a.id], model: usage[a.id]?.model ?? models[a.id], activity: activity[a.id], goal: goals[a.id], progress: progress[a.id], todos: todos[a.id], elapsed: elapsedOf(a.id, now), reveal: revealOf(a.id), children: [] }]),
-  )
+const workflowStatus = ({ endedAt }: WorkflowAgent) => (endedAt === undefined ? 'running' : 'completed')
+
+const workflowGroup = (runId: string, members: Node[]): Node => {
+  const id = workflowNodeId(runId)
+  const group: Node = { id, label: workflowLabel(runId), status: members.some(m => isLive(m.status)) ? 'running' : 'completed', reveal: revealOf(id), children: members }
+  return { ...group, usage: sumTree(group) }
+}
+
+export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number, workflow: readonly WorkflowAgent[] = []): Node => {
+  const nodeFor = (id: string, label: string, status: string, elapsed: number | undefined): Node => ({ id, label, status, usage: usage[id], model: usage[id]?.model ?? models[id], activity: activity[id], goal: goals[id], progress: progress[id], todos: todos[id], elapsed, reveal: revealOf(id), children: [] })
+  const nodes = new Map<string, Node>(agents.map(a => [a.id, nodeFor(a.id, `${agentName(a.id)} · ${a.type}`, a.status, elapsedOf(a.id, now))]))
   const root: Node = { id: MAIN, label: 'main', status: 'running', finished: mainFinished, usage: usage[MAIN], model: usage[MAIN]?.model, activity: activity[MAIN], goal: goals[MAIN], progress: progress[MAIN], todos: todos[MAIN], elapsed: elapsedOf(MAIN, now), reveal: 1, children: [] }
   agents.forEach(a => {
     const parent = (a.parentId && nodes.get(a.parentId)) || root
     if (parent !== root) nodes.get(a.id)!.launchedBy = parent.label
     parent.children.push(nodes.get(a.id)!)
+  })
+  groupByRun(workflow).forEach((members, runId) => {
+    const children = members.map(m => ({ ...nodeFor(m.id, `${agentName(m.id)} · ${m.type}`, workflowStatus(m), (m.endedAt ?? now) - m.startedAt), launchedBy: workflowLabel(runId) }))
+    root.children.push(workflowGroup(runId, children))
   })
   return { ...root, children: root.children.map(pruneInactive).filter((c): c is Node => !!c) }
 }
