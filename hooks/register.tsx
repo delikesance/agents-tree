@@ -37,7 +37,7 @@ import { takeMapNote } from './mapEnsure'
 import { pointAtMap, startMapUpkeep } from './mapWiring'
 import type { Route } from './routing'
 import { makePanel } from './panel'
-import { skillDepsOf } from './skillHost'
+import { skillDepsOf, type SkillHostSource } from './skillHost'
 import { createSkillLearning } from './skillLearning'
 import { makeSkillsSection } from './skillsSection'
 import { firstPrompt, relayTarget, threadLines } from './threadLines'
@@ -230,7 +230,16 @@ const projectDir: { cwd?: string } = {}
 
 const learning = createSkillLearning()
 
-const skillsOf = ($: Parameters<typeof skillDepsOf>[0]) => skillDepsOf($, projectDir.cwd)
+const skillsOf = ($: SkillHostSource) =>
+  skillDepsOf(
+    {
+      store: { get: key => $.store.get(key), set: (key, value) => $.store.set(key, value) },
+      fs: { read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text), exists: path => $.fs.exists(path) },
+      process: { run: (argv, init) => $.process.run(argv, init) },
+      session: { id: () => $.session.id() },
+    },
+    projectDir.cwd,
+  )
 
 const recentMessages = async ($: PlanHost) => {
   const messages = await $.session.messages()

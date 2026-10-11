@@ -10,7 +10,7 @@ export type SkillDeps = {
   sessionId: () => Promise<string>
 }
 
-type SkillHostSource = {
+export type SkillHostSource = {
   store: SkillDeps['store']
   fs: { read: (path: string) => Promise<string>; write: (path: string, text: string) => Promise<void>; exists: (path: string) => Promise<boolean> }
   process: { run: (argv: string[], init: { cwd?: string; timeoutMs: number }) => Promise<{ exitCode: number; stdout: string }> }
@@ -19,15 +19,15 @@ type SkillHostSource = {
 
 const directoryOf = (path: string) => path.slice(0, path.lastIndexOf('/'))
 
-const skillFsOf = ($: SkillHostSource, cwd?: string): SkillFs => {
+const skillFsOf = (host: SkillHostSource, cwd?: string): SkillFs => {
   const run = async (command: string[]) => {
-    const { exitCode, stdout } = await $.process.run(command, { cwd, timeoutMs: RUN_TIMEOUT_MS })
+    const { exitCode, stdout } = await host.process.run(command, { cwd, timeoutMs: RUN_TIMEOUT_MS })
     if (exitCode !== 0) throw new Error(`${command[0]} exited with ${exitCode}`)
     return stdout
   }
   return {
-    read: async path => ((await $.fs.exists(path)) ? $.fs.read(path) : undefined),
-    write: (path, text) => $.fs.write(path, text),
+    read: async path => ((await host.fs.exists(path)) ? host.fs.read(path) : undefined),
+    write: (path, text) => host.fs.write(path, text),
     remove: async path => {
       await run(['rm', '-f', path])
       await run(['rmdir', directoryOf(path)]).catch(() => undefined)
@@ -36,10 +36,10 @@ const skillFsOf = ($: SkillHostSource, cwd?: string): SkillFs => {
   }
 }
 
-export const skillDepsOf = ($: SkillHostSource, cwd?: string): SkillDeps => ({
-  store: { get: key => $.store.get(key), set: (key, value) => $.store.set(key, value) },
-  fs: skillFsOf($, cwd),
+export const skillDepsOf = (host: SkillHostSource, cwd?: string): SkillDeps => ({
+  store: { get: key => host.store.get(key), set: (key, value) => host.store.set(key, value) },
+  fs: skillFsOf(host, cwd),
   cwd,
   now: Date.now,
-  sessionId: () => $.session.id(),
+  sessionId: () => host.session.id(),
 })
