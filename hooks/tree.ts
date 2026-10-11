@@ -54,7 +54,7 @@ const workflowStatus = ({ endedAt }: WorkflowAgent) => (endedAt === undefined ? 
 
 const workflowGoal = (members: readonly WorkflowAgent[]) => {
   const current = members.filter(m => m.endedAt === undefined).pop()
-  return current ? `▸ ${current.label}` : 'terminé'
+  return current ? `▸ ${current.label}` : `${members.length} agents`
 }
 
 const workflowGroup = (runId: string, agents: WorkflowAgent[], members: Node[]): Node => {

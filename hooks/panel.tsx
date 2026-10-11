@@ -122,8 +122,8 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
               </Box>
               {!compact && !!node.segments?.length && (
                 <Text>
-                  {node.segments.map(done => <Text color={done ? PALETTE.green : PALETTE.yellow}>{'▰ '}</Text>)}
-                  <Text color={PALETTE.muted}> {node.progress?.done}/{node.progress?.total} terminés</Text>
+                  {node.segments.map(done => <Text color={done ? PALETTE.green : PALETTE.yellow}>{'██ '}</Text>)}
+                  <Text color={PALETTE.muted}> {node.progress?.done}/{node.progress?.total}  terminés</Text>
                 </Text>
               )}
               {!compact && !!node.todos?.length && <TodoList todos={node.todos} animated={kind === 'running'} />}
@@ -138,7 +138,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
                 </Box>
                 {node.id !== MAIN && (
                   <Box columnGap={ACTION_GAP}>
-                    <ActionButton id={`open:${node.id}`} label="ouvrir ▸" background={PALETTE.rule} onPress={() => onOpen(node.id)} />
+                    {!node.segments && <ActionButton id={`open:${node.id}`} label="ouvrir ▸" background={PALETTE.rule} onPress={() => onOpen(node.id)} />}
                     {!isLive(node.status) && <ActionButton id={`dismiss:${node.id}`} label={`retirer ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={() => onDismiss(node.id)} />}
                   </Box>
                 )}
