@@ -4,6 +4,10 @@ import { SKILLS_DIR, SKILL_FILE, type SkillFs, type SkillRecord } from './skillT
 
 export type WriteResult = { ok: true; citedPaths: string[]; headCommit: string } | { ok: false; errors: string[] }
 
+const isDiscovered = (record: SkillRecord) => record.signals.some(signal => signal.kind === 'discovery')
+
+const mentionedIn = (steps: string[], paths: string[]) => paths.filter(path => steps.some(step => step.includes(path)))
+
 const isSafeSlug = (slug: string) => /^[a-z0-9][a-z0-9-]*$/.test(slug)
 
 export const skillPath = (cwd: string, slug: string) => `${cwd}/${SKILLS_DIR}/${slug}/${SKILL_FILE}`
@@ -18,7 +22,8 @@ export const headCommit = async (fs: SkillFs) => (await fs.run(['git', 'rev-pars
 export async function writeSkill(fs: SkillFs, cwd: string, record: SkillRecord, synthesized: SynthesizedSkill): Promise<WriteResult> {
   if (!isSafeSlug(record.slug)) return { ok: false, errors: ['invalid slug'] }
   const citedPaths = await existingPaths(fs, cwd, record.citedPaths)
-  const text = renderSkill({ slug: record.slug, ...synthesized, citedPaths })
+  const listed = isDiscovered(record) ? mentionedIn(synthesized.steps, citedPaths) : citedPaths
+  const text = renderSkill({ slug: record.slug, ...synthesized, citedPaths: listed })
   const errors = validateSkill(text)
   if (errors.length) return { ok: false, errors }
   await fs.write(skillPath(cwd, record.slug), text)

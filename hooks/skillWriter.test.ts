@@ -42,3 +42,14 @@ test('removeSkill: deletes the skill file and rejects unsafe slugs', async () =>
   expect(await removeSkill(fs, '/p', 'a')).toBe(true)
   expect(fs.files).toEqual({})
 })
+
+test('a discovered skill lists only the files its steps mention, yet keeps tracking all cited files', async () => {
+  const written: Record<string, string> = {}
+  const fs = { read: async () => 'x', write: async (path: string, text: string) => void (written[path] = text), remove: async () => undefined, run: async () => 'abc\n' }
+  const record = { slug: 'tests', citedPaths: ['a.ts', 'b.ts'], signals: [{ kind: 'discovery' }] } as never
+  const result = await writeSkill(fs, '/p', record, { description: 'Use when testing', steps: ['edit a.ts'] })
+  expect(result).toMatchObject({ ok: true, citedPaths: ['a.ts', 'b.ts'] })
+  const text = Object.values(written)[0] ?? ''
+  expect(text).toContain('- a.ts')
+  expect(text).not.toContain('- b.ts')
+})
