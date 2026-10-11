@@ -1,15 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { isWellBriefed, withMapPointer } from './routing'
-
-test('a brief with paths and a report limit skips the rewrite', () => {
-  expect(isWellBriefed('Fix src/a.ts then report. Final report: 15 lines max.')).toBe(true)
-})
-
-test('a brief missing paths or a report limit is rewritten', () => {
-  expect(isWellBriefed('Fix the sorting bug, report in 10 lines')).toBe(false)
-  expect(isWellBriefed('Fix src/a.ts')).toBe(false)
-})
+import { withMapPointer } from './routing'
 
 test('the brief is prefixed with the map pointer only once, and only when a map exists', () => {
   const prefixed = withMapPointer('Fix src/a.ts', true)

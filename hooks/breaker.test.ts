@@ -24,12 +24,12 @@ test('window expires', () => {
   expect(recordFailure('w', 'b').length).toBe(1)
 })
 test('nudge once', () => {
-  resetNudge(); expect(contextNudge(1000)).toBeUndefined(); expect(contextNudge(130000)).toBeTruthy(); expect(contextNudge(130000)).toBeUndefined() })
+  resetNudge(); expect(contextNudge(1000)).toBeUndefined(); expect(contextNudge(190000)).toBeTruthy(); expect(contextNudge(190000)).toBeUndefined() })
 test('nudge is per session and resettable', () => {
-  expect(contextNudge(130000, 'a')).toBeTruthy()
-  expect(contextNudge(130000, 'b')).toBeTruthy()
-  expect(contextNudge(130000, 'a')).toBeUndefined()
+  expect(contextNudge(190000, 'a')).toBeTruthy()
+  expect(contextNudge(190000, 'b')).toBeTruthy()
+  expect(contextNudge(190000, 'a')).toBeUndefined()
   resetNudge('a')
-  expect(contextNudge(130000, 'a')).toBeTruthy()
-  expect(contextNudge(130000, 'b')).toBeUndefined()
+  expect(contextNudge(190000, 'a')).toBeTruthy()
+  expect(contextNudge(190000, 'b')).toBeUndefined()
 })

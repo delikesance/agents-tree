@@ -30,7 +30,7 @@ import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, RE
 import type { Entry } from './knowledge'
 import { addUsage } from './pricing'
 import { DEDUPED_TOOLS, IMAGE_READ_DENY, WRITING_TOOLS, countImageRead, duplicateReadDeny, forgetReads, imageLimitReached, isImageRead, pendingReads, readKey, resetImageReads, settleRead } from './reads'
-import { GOAL_LABEL_PROMPT, ROUTER_MIN_PROMPT, ROUTER_PROMPT, firstLine, isQuestion, isWellBriefed, parseRoute, truncateGoal, withGoalContext, withReportLimit } from './routing'
+import { GOAL_LABEL_PROMPT, firstLine, isQuestion, truncateGoal, withGoalContext, withReportLimit } from './routing'
 import { takeMapNote } from './mapEnsure'
 import { pointAtMap, startMapUpkeep } from './mapWiring'
 import type { Route } from './routing'
@@ -124,14 +124,18 @@ const requestSummary = async ($: Completer, request: string, context?: string) =
   return truncateGoal(label && !isQuestion(label) ? label : (context ?? firstLine(request)))
 }
 
+const JEV_TIMEOUT_MS = 1000
+const CLASSIFIER_OUTAGE = 'auto mode classifier gave no verdict'
+
 const jevChoice = async ($: JevHost, state: Record<string, unknown>, instructions: string, criteria: Record<string, string>): Promise<JevChoice> => {
   const key = await $.env.get('JEV_API_KEY')
   if (!key) return { note: 'jev: pas de clé' }
-  const response = await $.http.fetch(JEV_URL, {
+  const response = await withTimeout($.http.fetch(JEV_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ state, model: 'jev-latest', questions: { q: { type: 'choice', instructions, criteria } } }),
-  })
+  }), JEV_TIMEOUT_MS)
+  if (!response) return { note: 'jev: timeout' }
   if (!response.ok) return { note: `jev: HTTP ${response.status}` }
   const answer = JSON.parse(response.text).answers?.q
   if (!(answer?.choice in criteria)) return { note: 'jev: réponse invalide' }
@@ -143,13 +147,9 @@ const jevChoice = async ($: JevHost, state: Record<string, unknown>, instruction
 const jevModel = ($: JevHost, prompt: string) =>
   jevChoice($, { task: prompt.slice(0, JEV_TASK_MAX) }, 'Which agent profile does `task` need?', MODEL_CRITERIA).catch(jevFailure)
 
-const routeSpawn = async ($: Completer & JevHost, prompt: string): Promise<Route | undefined> => {
+const routeSpawn = async ($: JevHost, prompt: string): Promise<Route | undefined> => {
   const verdict = await jevModel($, prompt)
-  if (prompt.length < ROUTER_MIN_PROMPT || isWellBriefed(prompt)) return verdict.choice ? { model: verdict.choice, prompt, source: verdict.note } : undefined
-  const reply = await $.model.complete({ model: 'haiku', prompt: ROUTER_PROMPT + prompt, effort: 'low', maxTokens: 1500 })
-  const route = reply.isAnswered && reply.text ? parseRoute(reply.text) : undefined
-  if (!route) return undefined
-  return verdict.choice ? { ...route, model: verdict.choice, source: verdict.note } : { ...route, source: `haiku (${verdict.note})` }
+  return verdict.choice ? { model: verdict.choice, source: verdict.note } : undefined
 }
 
 const CHEAP_FAMILY = 'haiku'
@@ -312,7 +312,7 @@ export const register: Register = on => {
     }
     if (e.tool === 'TaskCreate') void update($, progressByAgent, all => ({ ...all, [agent]: countTask(all[agent], { total: 1 }) }))
     if (e.tool === 'TaskUpdate' && e.status === TASK_STATUS_DONE) void update($, progressByAgent, all => ({ ...all, [agent]: countTask(all[agent], { done: 1 }) }))
-    const key = `${e.tool}:${activity}`
+    const key = `${agent}:${e.tool}:${activity}`
     startCall()
     if (stopped.has(key)) return { deny: BREAKER_DENY }
     if (isImageRead(e as Record<string, unknown>) && imageLimitReached()) return { deny: IMAGE_READ_DENY }
@@ -322,8 +322,9 @@ export const register: Register = on => {
     }
     const result = await next(e)
     if (WRITING_TOOLS.includes(e.tool) || (e.tool === 'Bash' && !result.isReadOnly)) forgetReads()
-    if (result.isError) await noteFailure($, key, String(result.text ?? 'error')).catch(() => undefined)
-    else recordSuccess(key)
+    const failure = result.isError ? String(result.text ?? 'error') : undefined
+    if (failure === undefined) recordSuccess(key)
+    else if (!failure.includes(CLASSIFIER_OUTAGE)) void noteFailure($, key, failure).catch(() => undefined)
     const succeeded = !result.isError && !result.deny
     if (succeeded && isImageRead(e as Record<string, unknown>)) countImageRead()
     if (succeeded && e.tool === 'Agent') await learn($, `${e.description}: ${e.prompt}`, result.text).catch(() => undefined)
@@ -420,17 +421,17 @@ export const register: Register = on => {
   })
 
   on('agent.spawn', async ($, e, next) => {
-    const route = await routeSpawn($, e.prompt).catch(() => undefined)
     const declared = await declaredModel(path => $.fs.read(path), [projectDir.cwd, await $.env.get('HOME')], e.subagentType).catch(() => undefined)
+    const route = e.model || declared ? undefined : await routeSpawn($, e.prompt).catch(() => undefined)
     const injected = route ? modelToInject(e.model, declared, route.model) : undefined
-    const routed = route ? { ...e, prompt: route.prompt, ...(injected ? { model: injected } : {}) } : e
+    const routed = injected ? { ...e, model: injected } : e
     const result = await next({ ...routed, prompt: await pointAtMap(mapHostOf($), projectDir.cwd, withReportLimit(routed.prompt)) })
     if (result.agentId) {
       const { agentId } = result
       const model = result.model ?? injected ?? declared
       if (model) void update($, modelByAgent, all => ({ ...all, [agentId]: model }))
       if (route) void update($, routeSourceByAgent, all => ({ ...all, [agentId]: route.source }))
-      void setGoal($, agentId, route?.prompt ?? e.prompt).catch(() => undefined)
+      void setGoal($, agentId, e.prompt).catch(() => undefined)
     }
     return result
   })
