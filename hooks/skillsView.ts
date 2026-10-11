@@ -7,6 +7,7 @@ export type SkillRow = {
   cleanUses: number
   idleSessions: number
   summary: string
+  lastError?: string
 }
 
 const STATUS_ORDER: SkillStatus[] = ['stale', 'candidate', 'active', 'archived', 'rejected']
@@ -32,6 +33,7 @@ const toRow = (record: SkillRecord): SkillRow => ({
   cleanUses: record.cleanUses,
   idleSessions: record.idleSessions,
   summary: record.summary ?? PENDING_SUMMARY,
+  lastError: record.lastError,
 })
 
 export const viewSkills = (ledger: SkillLedger): SkillRow[] => Object.values(ledger).sort(compareRecords).map(toRow)

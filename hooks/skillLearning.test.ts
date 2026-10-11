@@ -147,6 +147,38 @@ test('a failed synthesis keeps the candidate and retries later', async () => {
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
 })
 
+test('a failed synthesis stores the reason on the candidate', async () => {
+  const h = harness()
+  const run = h.deps.fs.run
+  h.deps.fs.run = async command => (command.includes('claude') ? 'not json' : run(command))
+  const slug = await learnSkill(h)
+  expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', lastError: 'réponse de synthèse invalide' })
+  h.deps.fs.run = run
+  await h.learning.accept(h.deps, slug)
+  expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'active' })
+  expect((await h.learning.ledger(h.deps))[slug]?.lastError).toBeUndefined()
+})
+
+test('accept returns the failure reason when the write is refused', async () => {
+  const h = harness()
+  await runSession(h, 's1')
+  const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  const run = h.deps.fs.run
+  h.deps.fs.run = async command => (command.includes('claude') ? '{"description":"Fix tests","steps":["a"]}' : run(command))
+  expect(await h.learning.accept(h.deps, slug)).toBe("écriture refusée : description must start with 'Use when'")
+  expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', lastError: "écriture refusée : description must start with 'Use when'" })
+})
+
+test('accept explains a missing project and a promotion already running', async () => {
+  const h = harness()
+  await runSession(h, 's1')
+  const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  expect(await h.learning.accept({ ...h.deps, cwd: undefined }, slug)).toBe('Aucun projet ouvert.')
+  const pending = h.learning.accept(h.deps, slug)
+  expect(await h.learning.accept(h.deps, slug)).toBe('Rédaction déjà en cours pour ce skill.')
+  await pending
+})
+
 test('a candidate gets a stored one-line summary', async () => {
   const h = harness()
   await runSession(h, 's1')
