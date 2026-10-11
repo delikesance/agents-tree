@@ -5,7 +5,7 @@ import type { SkillRow } from './skillsView'
 import type { SkillLedger, SkillStatus } from './skillTypes'
 
 type Ui = Record<'Box' | 'Text' | 'Button', (props: any) => any>
-type Handlers = { onReject: (slug: string) => void; onRestore: (slug: string) => void; onRevalidate: (slug: string) => void }
+type Handlers = { onAccept: (slug: string) => void; onReject: (slug: string) => void; onRestore: (slug: string) => void; onRevalidate: (slug: string) => void }
 
 const MAX_VISIBLE_ROWS = 6
 const ACTION_GAP = 2
@@ -23,17 +23,25 @@ const STATUS_COLORS: Record<SkillStatus, string> = {
 export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
   const { ActionButton } = makeBadge({ Box, Text, Button })
 
-  const RowActions = ({ row, onReject, onRestore, onRevalidate }: { row: SkillRow } & Handlers) => {
+  const RowActions = ({ row, onAccept, onReject, onRestore, onRevalidate }: { row: SkillRow } & Handlers) => {
     const { slug, status } = row
     if (status === 'stale') return <ActionButton id={`revalidate:${slug}`} label="revalider" background={PALETTE.rule} onPress={() => onRevalidate(slug)} />
     if (status === 'archived' || status === 'rejected') return <ActionButton id={`restore:${slug}`} label="restaurer" background={PALETTE.rule} onPress={() => onRestore(slug)} />
-    return <ActionButton id={`reject:${slug}`} label="rejeter" background={PALETTE.badgeRed} onPress={() => onReject(slug)} />
+    return (
+      <>
+        {status === 'candidate' && <ActionButton id={`accept:${slug}`} label="accepter" background={PALETTE.badgeGreen} onPress={() => onAccept(slug)} />}
+        <ActionButton id={`reject:${slug}`} label="rejeter" background={PALETTE.badgeRed} onPress={() => onReject(slug)} />
+      </>
+    )
   }
 
   const SkillRowView = ({ row, ...handlers }: { row: SkillRow } & Handlers) => (
-    <Box justifyContent="space-between" columnGap={ROW_GAP}>
-      <Text wrap="truncate-end" color={STATUS_COLORS[row.status]}>{row.label}</Text>
-      <Box columnGap={ACTION_GAP} flexShrink={0}><RowActions row={row} {...handlers} /></Box>
+    <Box flexDirection="column">
+      <Box justifyContent="space-between" columnGap={ROW_GAP}>
+        <Text wrap="truncate-end" color={STATUS_COLORS[row.status]}>{row.label}</Text>
+        <Box columnGap={ACTION_GAP} flexShrink={0}><RowActions row={row} {...handlers} /></Box>
+      </Box>
+      {row.summary && <Text color={PALETTE.muted} wrap="truncate-end">{row.summary}</Text>}
     </Box>
   )
 
