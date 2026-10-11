@@ -25,7 +25,7 @@ export function createSkillLearning() {
   const load = async (deps: SkillDeps) => (cache ??= ((await deps.store.get(SKILLS_STORE_KEY)) as SkillLedger | undefined) ?? {})
 
   const mutate = (deps: SkillDeps, change: (ledger: SkillLedger) => SkillLedger | Promise<SkillLedger>) => {
-    if (process.env[SYNTHESIS_ENV]) return queue
+    if (typeof process !== 'undefined' && process.env?.[SYNTHESIS_ENV]) return queue
     queue = queue
       .then(async () => {
         const before = await load(deps)
