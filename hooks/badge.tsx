@@ -10,7 +10,7 @@ export const makeBadge = ({ Box, Text, Button }: Ui) => {
   )
 
   const ActionButton = ({ id, label, background, onPress }: { id: string; label: string; background: string; onPress: () => void }) => (
-    <Box alignSelf="flex-start" backgroundColor={background} paddingX={1}>
+    <Box alignSelf="flex-start" flexShrink={0} backgroundColor={background} paddingX={1}>
       <Button key={id} label={label} plain onPress={onPress}><Text color={PALETTE.onBadge}>{label}</Text></Button>
     </Box>
   )
