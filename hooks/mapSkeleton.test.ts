@@ -21,7 +21,7 @@ test('groups show code and test counts, symbols and purposes', () => {
   const summaries = parseSummaries('hooks/: plugin code\nghost: nothing\nnot a line', groups)
   expect([...summaries.keys()]).toEqual(['hooks/'])
   const map = build({ summaries, symbols: new Map([['hooks/a.ts', ['alpha', 'beta']]]) })
-  expect(map).toContain('- hooks/ (2 files + 1 tests): plugin code -> a.ts(alpha, beta)')
+  expect(map).toContain('- hooks/ (2 files + 1 test): plugin code -> a.ts(alpha, beta)')
   expect(map).toContain('- crates/x/ (2 files)')
 })
 
@@ -45,14 +45,20 @@ test('the generated part stays within the line and size caps, without losing gro
   const generated = map.slice(0, map.indexOf('<!-- manual -->'))
   expect(generated.trimEnd().split('\n').length).toBeLessThanOrEqual(60)
   expect(generated.length).toBeLessThanOrEqual(6_000)
-  expect(map).toContain('more (')
+  expect(map).toContain('{dir0..dir')
 })
 
-test('symbol lists of the largest groups are dropped first when the map is too big', () => {
+test('symbols shrink uniformly before they are dropped, so big groups still name their files', () => {
   const files = [...Array.from({ length: 40 }, (_, i) => `big/f${i}.ts`), 'small/a.ts']
   const names = Array.from({ length: 6 }, (_, i) => `veryLongExportedSymbolName${i}`)
   const symbols = new Map(files.map(file => [file, names]))
   const map = build({ symbols }, files)
-  expect(map).toContain('- small/ (1 files) -> a.ts(')
-  expect(map).toContain('- big/other (40 files)\n')
+  expect(map).toContain('- small/ (1 file) -> a.ts(veryLongExportedSymbolName0')
+  expect(map).toContain('f39.ts')
+  expect(map).not.toContain('veryLongExportedSymbolName3')
+})
+
+test('counts use singular and plural', () => {
+  const map = build({}, ['a/x.ts', 'a/x.test.ts', 'a/y.test.ts'])
+  expect(map).toContain('(1 file + 2 tests)')
 })

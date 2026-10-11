@@ -1,4 +1,6 @@
-export type Group = { name: string; files: string[]; tests: string[]; merged: number }
+import { mergeSmallest } from './mapMerge'
+
+export type Group = { name: string; files: string[]; tests: string[]; parent: string; parts: string[] }
 
 export const MAX_GROUPS = 40
 const SPLIT_ABOVE = 15
@@ -10,14 +12,19 @@ const FIRST_WORD = /^[A-Z]?[a-z0-9]+/
 
 export const baseName = (file: string) => file.slice(file.lastIndexOf('/') + 1)
 
-export const groupSize = ({ files, tests }: Group) => files.length + tests.length
+const isTest = (file: string) => TEST_FILE.test(file)
 
-const makeGroup = (name: string, all: string[]): Group => ({
-  name,
-  files: all.filter(file => !TEST_FILE.test(file)),
-  tests: all.filter(file => TEST_FILE.test(file)),
-  merged: 0,
-})
+const makeGroup = (name: string, all: string[]): Group => {
+  const path = name.replace(/\/$/, '')
+  const cut = path.lastIndexOf('/')
+  return {
+    name,
+    files: all.filter(file => !isTest(file)),
+    tests: all.filter(isTest),
+    parent: cut < 0 ? '.' : path.slice(0, cut),
+    parts: [path.slice(cut + 1)],
+  }
+}
 
 const bucket = (files: string[], keyOf: (file: string) => string) => {
   const buckets = new Map<string, string[]>()
@@ -35,7 +42,7 @@ const prefixOf = (file: string) => FIRST_WORD.exec(baseName(file).split('.')[0] 
 const prefixGroups = (files: string[], dir: string) => {
   const label = dir || '.'
   const clusters = [...bucket(files, prefixOf)]
-  const isCluster = ([key, list]: [string, string[]]) => key !== OTHER && list.length > 1
+  const isCluster = ([key, list]: [string, string[]]) => key !== OTHER && list.filter(file => !isTest(file)).length > 1
   const leftovers = clusters.filter(cluster => !isCluster(cluster)).flatMap(([, list]) => list)
   return [
     ...clusters.filter(isCluster).map(([key, list]) => makeGroup(`${label}/${key}*`, list)),
@@ -55,15 +62,12 @@ const splitDir = (files: string[], dir: string, depth: number): Group[] => {
   return [...own, ...[...nested].flatMap(([name, list]) => splitDir(list, dir ? `${dir}/${name}` : name, depth + 1))]
 }
 
-export const mergeSmallest = (groups: Group[]) => {
-  const [smallest, next] = [...groups].sort((a, b) => groupSize(a) - groupSize(b))
-  if (!smallest || !next) return groups
-  const merged = { ...next, files: [...next.files, ...smallest.files], tests: [...next.tests, ...smallest.tests], merged: next.merged + smallest.merged + 1 }
-  return groups.filter(group => group !== smallest).map(group => (group === next ? merged : group))
-}
-
 export const groupFiles = (files: string[]) => {
   let groups = splitDir(files, '', 0)
-  while (groups.length > MAX_GROUPS) groups = mergeSmallest(groups)
+  while (groups.length > MAX_GROUPS) {
+    const merged = mergeSmallest(groups)
+    if (merged === groups) break
+    groups = merged
+  }
   return groups
 }

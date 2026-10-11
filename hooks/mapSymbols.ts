@@ -3,7 +3,7 @@ import { baseName } from './mapGroups'
 export type Symbols = Map<string, string[]>
 
 const MAX_READ_FILES = 150
-const MAX_SYMBOLS_PER_FILE = 6
+export const MAX_SYMBOLS_PER_FILE = 6
 
 const SYMBOL_PATTERNS: Array<[RegExp, RegExp]> = [
   [/\.[cm]?[jt]sx?$/, /^export\s+(?:async\s+)?(?:const|function|type|class|interface|enum)\s+(\w+)/gm],
@@ -24,9 +24,10 @@ export const readSymbols = async (read: (path: string) => Promise<string>, files
   return new Map(entries.filter(([, symbols]) => symbols.length > 0))
 }
 
-export const symbolEntry = (file: string, symbols: Symbols) => {
+export const symbolEntry = (file: string, symbols: Symbols, limit = MAX_SYMBOLS_PER_FILE) => {
   const list = symbols.get(file)
   if (!list) return undefined
-  const hidden = list.length - MAX_SYMBOLS_PER_FILE
-  return `${baseName(file)}(${[...list.slice(0, MAX_SYMBOLS_PER_FILE), ...(hidden > 0 ? [`+${hidden}`] : [])].join(', ')})`
+  if (limit === 0) return baseName(file)
+  const hidden = list.length - limit
+  return `${baseName(file)}(${[...list.slice(0, limit), ...(hidden > 0 ? [`+${hidden}`] : [])].join(', ')})`
 }
