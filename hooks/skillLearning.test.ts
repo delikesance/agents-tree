@@ -186,3 +186,12 @@ test('a candidate gets a stored one-line summary', async () => {
   const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', summary: SUMMARY })
 })
+
+test('discovery mines only README.md, never the CLAUDE.md that is already in context', async () => {
+  const h = harness()
+  const section = '# Tests\n- run `bun test hooks/`\n- put a shim in `node_modules/claude-code/testing.ts`\n- delete `node_modules`\n'
+  h.files['/p/CLAUDE.md'] = section
+  expect(await h.learning.discover(h.deps, false)).toBe('Aucun candidat dans README.md.')
+  h.files['/p/README.md'] = section
+  expect(await h.learning.discover(h.deps, false)).toBe('✘ tests — déjà dans le contexte permanent (3/3 étapes)')
+})
