@@ -5,11 +5,12 @@ import type { SkillRow } from './skillsView'
 import type { SkillLedger, SkillStatus } from './skillTypes'
 
 type Ui = Record<'Box' | 'Text' | 'Button', (props: any) => any>
-type Handlers = { onAccept: (slug: string) => void; onReject: (slug: string) => void; onRestore: (slug: string) => void; onRevalidate: (slug: string) => void }
+type Handlers = { onAccept: (slug: string) => void; onReject: (slug: string) => void; onRestore: (slug: string) => void; onRevalidate: (slug: string) => void; isBusy: (slug: string) => boolean }
 
 const MAX_VISIBLE_ROWS = 6
 const ACTION_GAP = 2
 const ROW_GAP = 2
+const BUSY_LABEL = 'rédaction…'
 const EMPTY_LABEL = 'aucun skill appris pour le moment'
 
 const STATUS_COLORS: Record<SkillStatus, string> = {
@@ -23,14 +24,16 @@ const STATUS_COLORS: Record<SkillStatus, string> = {
 export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
   const { ActionButton } = makeBadge({ Box, Text, Button })
 
-  const RowActions = ({ row, onAccept, onReject, onRestore, onRevalidate }: { row: SkillRow } & Handlers) => {
+  const RowActions = ({ row, onAccept, onReject, onRestore, onRevalidate, isBusy }: { row: SkillRow } & Handlers) => {
     const { slug, status } = row
     if (status === 'stale') return <ActionButton id={`revalidate:${slug}`} label="revalider" background={PALETTE.rule} onPress={() => onRevalidate(slug)} />
     if (status === 'archived' || status === 'rejected') return <ActionButton id={`restore:${slug}`} label="restaurer" background={PALETTE.rule} onPress={() => onRestore(slug)} />
+    const isCandidate = status === 'candidate'
+    if (isBusy(slug)) return <Text color={PALETTE.muted}>{BUSY_LABEL}</Text>
     return (
       <>
-        {status === 'candidate' && <ActionButton id={`accept:${slug}`} label="accepter" background={PALETTE.badgeGreen} onPress={() => onAccept(slug)} />}
-        <ActionButton id={`reject:${slug}`} label="rejeter" background={PALETTE.badgeRed} onPress={() => onReject(slug)} />
+        {isCandidate && <ActionButton id={`accept:${slug}`} label="accepter" background={PALETTE.badgeGreen} onPress={() => onAccept(slug)} />}
+        <ActionButton id={`reject:${slug}`} label={isCandidate ? 'rejeter' : 'supprimer'} background={PALETTE.badgeRed} onPress={() => onReject(slug)} />
       </>
     )
   }
