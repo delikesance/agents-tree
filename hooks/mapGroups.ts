@@ -1,6 +1,6 @@
 import { mergeSmallest } from './mapMerge'
 
-export type Group = { name: string; files: string[]; tests: string[]; parent: string; parts: string[] }
+export type Group = { name: string; files: string[]; tests: string[]; parent: string; parts: string[]; prefixed?: boolean }
 
 export const MAX_GROUPS = 40
 const SPLIT_ABOVE = 15
@@ -47,7 +47,7 @@ const prefixGroups = (files: string[], dir: string) => {
   return [
     ...clusters.filter(isCluster).map(([key, list]) => makeGroup(`${label}/${key}*`, list)),
     ...(leftovers.length ? [makeGroup(`${label}/${OTHER}`, leftovers)] : []),
-  ]
+  ].map(group => ({ ...group, prefixed: true }))
 }
 
 const relative = (file: string, dir: string) => (dir ? file.slice(dir.length + 1) : file)
