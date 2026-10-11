@@ -36,8 +36,10 @@ const skillFsOf = (host: SkillHostSource, cwd?: string): SkillFs => {
   }
 }
 
+const scopedKey = (key: string, cwd?: string) => (cwd ? `${key}@${cwd}` : key)
+
 export const skillDepsOf = (host: SkillHostSource, cwd?: string): SkillDeps => ({
-  store: { get: key => host.store.get(key), set: (key, value) => host.store.set(key, value) },
+  store: { get: key => host.store.get(scopedKey(key, cwd)), set: (key, value) => host.store.set(scopedKey(key, cwd), value) },
   fs: skillFsOf(host, cwd),
   cwd,
   now: Date.now,
