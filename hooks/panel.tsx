@@ -126,8 +126,8 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
                 <Box flexDirection="column">
                   <Box columnGap={1}>
                     {node.segments.map(done => (
-                      <Box flexGrow={1} flexBasis={0} overflow="hidden">
-                        <Text wrap="truncate-end" color={done ? PALETTE.green : PALETTE.yellow}>{SEGMENT_GLYPH.repeat(SEGMENT_GLYPH_CELLS)}</Text>
+                      <Box flexGrow={1} width={0} height={1} overflow="hidden">
+                        <Text color={done ? PALETTE.green : PALETTE.yellow}>{SEGMENT_GLYPH.repeat(SEGMENT_GLYPH_CELLS)}</Text>
                       </Box>
                     ))}
                   </Box>
