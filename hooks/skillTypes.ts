@@ -35,6 +35,7 @@ export type SkillRecord = {
   signals: SkillSignal[]
   citedPaths: string[]
   headCommit: string
+  summary?: string
   createdAt: number
   lastUsedAt?: number
   idleSessions: number
