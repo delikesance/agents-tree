@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { groupSignal, readyToPromote, reject, restore } from './skillLedger'
+import { groupSignal, readyToPromote, reject, remove, removeInactive, restore } from './skillLedger'
 import type { SkillLedger, SkillSignal } from './skillTypes'
 
 const signal = (sessionId: string, note: string, files: string[] = [], tools: string[] = []): SkillSignal => ({
@@ -82,4 +82,25 @@ test('readyToPromote needs candidate, enough sessions and room', () => {
   expect(readyToPromote(ready, 19)).toBe(true)
   expect(readyToPromote({ ...ready, status: 'active' }, 0)).toBe(false)
   expect(readyToPromote({ ...ready, status: 'rejected' }, 0)).toBe(false)
+})
+
+test('remove drops only the given record, unknown slug is a no-op', () => {
+  const first = groupSignal({}, signal('s1', NOTE))
+  const second = groupSignal(first.ledger, signal('s2', 'unrelated refactor of the billing module'))
+  const removed = remove(second.ledger, first.slug)
+  expect(Object.keys(removed)).toEqual(Object.keys(second.ledger).filter(slug => slug !== first.slug))
+  expect(remove(second.ledger, 'nope')).toBe(second.ledger)
+})
+
+test('removeInactive keeps candidate and active records only', () => {
+  const { ledger, slug } = groupSignal({}, signal('s1', NOTE))
+  const record = ledger[slug]
+  const statuses: SkillLedger = {
+    kept: { ...record, slug: 'kept', status: 'active' },
+    candidate: { ...record, slug: 'candidate', status: 'candidate' },
+    stale: { ...record, slug: 'stale', status: 'stale' },
+    archived: { ...record, slug: 'archived', status: 'archived' },
+    rejected: { ...record, slug: 'rejected', status: 'rejected' },
+  }
+  expect(Object.keys(removeInactive(statuses)).sort()).toEqual(['candidate', 'kept'])
 })

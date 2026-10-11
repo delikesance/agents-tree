@@ -71,3 +71,12 @@ const setStatus = (ledger: SkillLedger, slug: string, status: SkillRecord['statu
 export const reject = (ledger: SkillLedger, slug: string) => setStatus(ledger, slug, 'rejected')
 
 export const restore = (ledger: SkillLedger, slug: string) => setStatus(ledger, slug, 'candidate')
+
+const INACTIVE_STATUSES: SkillRecord["status"][] = ["stale", "archived", "rejected"]
+
+export const isInactive = (record: SkillRecord) => INACTIVE_STATUSES.includes(record.status)
+
+export const remove = (ledger: SkillLedger, slug: string) =>
+  ledger[slug] ? Object.fromEntries(Object.entries(ledger).filter(([key]) => key !== slug)) : ledger
+
+export const removeInactive = (ledger: SkillLedger) => Object.fromEntries(Object.entries(ledger).filter(([, record]) => !isInactive(record)))
