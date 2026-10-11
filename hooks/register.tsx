@@ -555,7 +555,7 @@ export const register: Register = on => {
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
         <Section title="SKILLS" icon={ICONS.steps}>
-          <SkillsSection ledger={skills} onReject={slug => changeSkill(learning.reject(skillsOf($), slug))} onRestore={slug => changeSkill(learning.restore(skillsOf($), slug))} onRevalidate={slug => changeSkill(learning.revalidate(skillsOf($), slug))} />
+          <SkillsSection ledger={skills} onAccept={slug => changeSkill(learning.accept(skillsOf($), slug))} onReject={slug => changeSkill(learning.reject(skillsOf($), slug))} onRestore={slug => changeSkill(learning.restore(skillsOf($), slug))} onRevalidate={slug => changeSkill(learning.revalidate(skillsOf($), slug))} />
         </Section>
       </Box>
     )
