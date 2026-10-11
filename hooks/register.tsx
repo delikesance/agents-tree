@@ -27,6 +27,7 @@ import { ICONS } from './icons'
 import { MODE_CRITERIA, MODE_KEY, modeAdvice } from './mode'
 import { JEV_MIN_CONFIDENCE, JEV_TASK_MAX, JEV_URL, MODEL_CRITERIA, jevFailure } from './jev'
 import type { JevChoice, JevHost } from './jev'
+import { isLearnable } from './learnable'
 import { KNOWLEDGE_SECTION, LEARNED_KEY_CHARS, MAX_LEARNED_TAGS, RECALL_TOOL, REMEMBER_TOOL, SECRET_MASK, SECRET_PATTERN, STORE_KEY, clip, hydrateMemories, search, tokenize, upsert } from './knowledge'
 import type { Entry } from './knowledge'
 import { addUsage } from './pricing'
@@ -180,7 +181,7 @@ type ClockHost = { ui: { invalidate: (event: 'ui.render') => void }; agent: { li
 const wakeAnimation = ($: ClockHost) =>
   wakeClock(() => $.ui.invalidate('ui.render'), async () => (await $.agent.list()).some(({ status }) => isLive(status)))
 
-const loadKnowledge = async ($: StateHost) => ((await $.store.get(STORE_KEY)) as Entry[] | undefined) ?? []
+const loadKnowledge = async ($: StateHost) => (((await $.store.get(STORE_KEY)) as Entry[] | undefined) ?? []).filter(entry => !entry.learned || isLearnable(entry.text))
 
 const saveEntry = async ($: StateHost, entry: Entry) => {
   const entries = upsert(await loadKnowledge($), entry)
@@ -191,7 +192,7 @@ const saveEntry = async ($: StateHost, entry: Entry) => {
 const COMPACTION_LABEL = 'compaction'
 
 const learn = async ($: StateHost, goal: string, report: string | undefined) => {
-  if (!report) return
+  if (!report || !isLearnable(report)) return
   const tags = [...new Set(tokenize(goal))].slice(0, MAX_LEARNED_TAGS)
   await saveEntry($, { key: goal.slice(0, LEARNED_KEY_CHARS), text: clip(report.replace(SECRET_PATTERN, SECRET_MASK)), tags, at: Date.now(), learned: true })
 }
