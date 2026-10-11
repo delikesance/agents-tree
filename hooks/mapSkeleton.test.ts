@@ -48,14 +48,22 @@ test('the generated part stays within the line and size caps, without losing gro
   expect(map).toContain('{dir0..dir')
 })
 
-test('symbols shrink uniformly before they are dropped, so big groups still name their files', () => {
-  const files = [...Array.from({ length: 60 }, (_, i) => `big/f${i}.ts`), 'small/a.ts']
+test('small groups get symbols while huge ones stay at file names', () => {
+  const files = Array.from({ length: 30 }, (_, group) => Array.from({ length: group + 1 }, (_, i) => `d${group}/f${i}.ts`)).flat()
   const names = Array.from({ length: 6 }, (_, i) => `veryLongExportedSymbolName${i}`)
   const symbols = new Map(files.map(file => [file, names]))
-  const map = build({ symbols }, files)
-  expect(map).toContain('- small/ (1 file) -> a.ts(veryLongExportedSymbolName0')
-  expect(map).toContain('f59.ts')
-  expect(map).not.toContain('veryLongExportedSymbolName3')
+  const lines = build({ symbols }, files).split('\n')
+  expect(lines.find(line => line.startsWith('- d0/'))).toContain('f0.ts(veryLongExportedSymbolName0, +5)')
+  const biggest = lines.find(line => line.startsWith('- d29/')) ?? ''
+  expect(biggest).toContain('f0.ts; f1.ts')
+  expect(biggest).not.toContain('veryLongExportedSymbolName')
+})
+
+test('a group lists at most eight files and counts the rest', () => {
+  const files = Array.from({ length: 12 }, (_, i) => `lib/f${i}.ts`)
+  const map = build({ symbols: new Map(files.map(file => [file, ['x']])) }, files)
+  expect(map).toContain('f7.ts(x); +4')
+  expect(map).not.toContain('f8.ts')
 })
 
 test('counts use singular and plural', () => {

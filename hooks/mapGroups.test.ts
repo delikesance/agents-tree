@@ -46,3 +46,11 @@ test('a prefix cluster needs two source files, tests do not count', () => {
   const files = [...numbered('hooks', 'mapPart', 8), 'hooks/breaker.ts', 'hooks/breaker.test.ts', ...numbered('hooks', 'flowStep', 7)]
   expect(names(files)).toEqual(['hooks/map*', 'hooks/flow*', 'hooks/other'])
 })
+
+test('prefix clusters of one directory collapse into a single group, never a pair', () => {
+  const dirs = Array.from({ length: 39 }, (_, i) => [`crates/c${i}/a.ts`, `crates/c${i}/b.ts`]).flat()
+  const files = [...dirs, ...numbered('web', 'mapPart', 8), ...numbered('web', 'flowStep', 8), 'web/breaker.ts']
+  const groupNames = names(files)
+  expect(groupNames).toContain('web/*')
+  expect(groupNames.filter(name => name.startsWith('web/'))).toEqual(['web/*'])
+})
