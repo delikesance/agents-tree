@@ -30,5 +30,9 @@ const io: MapIo = {
   },
 }
 
-const head = (await io.run(['git', 'rev-parse', 'HEAD'])).stdout.trim()
-await writeMap(io, head)
+const headResult = await io.run(['git', 'rev-parse', 'HEAD'])
+if (headResult.exitCode !== 0) {
+  console.error(`project-map: cannot resolve git HEAD in ${repo}`)
+  process.exit(1)
+}
+await writeMap(io, headResult.stdout.trim())
