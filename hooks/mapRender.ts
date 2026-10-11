@@ -10,16 +10,17 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 
 const countLabel = ({ files, tests }: Group) => [files.length && plural(files.length, 'file'), tests.length && plural(tests.length, 'test')].filter(Boolean).join(' + ')
 
-const listed = (entries: string[]) => (entries.length > MAX_LISTED_FILES ? [...entries.slice(0, MAX_LISTED_FILES), `+${entries.length - MAX_LISTED_FILES}`] : entries)
+const listed = (entries: string[], lifted: boolean) => (!lifted && entries.length > MAX_LISTED_FILES ? [...entries.slice(0, MAX_LISTED_FILES), `+${entries.length - MAX_LISTED_FILES}`] : entries)
 
-const groupLine = (group: Group, summaries: Map<string, string>, symbols: Symbols, limit?: number) => {
+const groupLine = (group: Group, summaries: Map<string, string>, symbols: Symbols, limit?: number, lifted = false) => {
   const purpose = summaries.get(group.name)
-  const entries = limit === undefined ? [] : listed(group.files.flatMap(file => symbolEntry(file, symbols, limit) ?? []))
+  const entries = limit === undefined ? [] : listed(group.files.flatMap(file => symbolEntry(file, symbols, limit) ?? []), lifted)
   return `- ${group.name} (${countLabel(group)})${purpose ? `: ${purpose}` : ''}${entries.length ? ` -> ${entries.join('; ')}` : ''}`
 }
 
 export const renderGroups = (groups: Group[], summaries: Map<string, string>, symbols: Symbols, charBudget: number) => {
-  const render = (shown: Group[], levels?: number[]) => shown.map((group, i) => groupLine(group, summaries, symbols, levels && SYMBOL_LEVELS[levels[i] ?? 0]))
+  const render = (shown: Group[], levels?: number[], lifted: boolean[] = []) =>
+    shown.map((group, i) => groupLine(group, summaries, symbols, levels && SYMBOL_LEVELS[levels[i] ?? 0], lifted[i]))
   const fits = (lines: string[]) => lines.join('\n').length <= charBudget
 
   const raiseLevels = (shown: Group[]) => {
@@ -33,7 +34,12 @@ export const renderGroups = (groups: Group[], summaries: Map<string, string>, sy
         if (!fits(render(shown, levels))) levels[i] = level - 1
       }
     }
-    return render(shown, levels)
+    const lifted = shown.map(() => false)
+    for (const i of smallestFirst) {
+      lifted[i] = true
+      if (!fits(render(shown, levels, lifted))) lifted[i] = false
+    }
+    return render(shown, levels, lifted)
   }
 
   let shown = groups

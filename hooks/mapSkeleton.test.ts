@@ -4,7 +4,8 @@ import { groupFiles } from './mapGroups'
 import { manualBlock } from './mapManual'
 import { buildMap } from './mapSkeleton'
 import type { MapInput } from './mapSkeleton'
-import { parseSummaries } from './mapSummaries'
+import { renderGroups } from './mapRender'
+import { evenSample, parseSummaries } from './mapSummaries'
 
 const HEAD = 'c'.repeat(40)
 const FILES = ['README.md', 'hooks/register.tsx', 'hooks/a.ts', 'hooks/a.test.ts', 'src/main.rs', 'crates/x/src/main.rs', 'crates/x/src/lib.rs', 'crates/y/src/main.rs']
@@ -59,11 +60,27 @@ test('small groups get symbols while huge ones stay at file names', () => {
   expect(biggest).not.toContain('veryLongExportedSymbolName')
 })
 
-test('a group lists at most eight files and counts the rest', () => {
-  const files = Array.from({ length: 12 }, (_, i) => `lib/f${i}.ts`)
-  const map = build({ symbols: new Map(files.map(file => [file, ['x']])) }, files)
-  expect(map).toContain('f7.ts(x); +4')
-  expect(map).not.toContain('f8.ts')
+const TWELVE_FILES = Array.from({ length: 12 }, (_, i) => `lib/f${i}.ts`)
+const twelveFileLine = (charBudget: number) => {
+  const symbols = new Map(TWELVE_FILES.map(file => [file, ['x']]))
+  return renderGroups(groupFiles(TWELVE_FILES), new Map(), symbols, charBudget).join('\n')
+}
+
+test('a group within a generous budget lists every file', () => {
+  const line = twelveFileLine(8_000)
+  expect(line).toContain('f11.ts(x)')
+  expect(line).not.toContain('+')
+})
+
+test('a group in a tight budget stays capped at eight files', () => {
+  const line = twelveFileLine(130)
+  expect(line).toContain('f7.ts(x); +4')
+  expect(line).not.toContain('f8.ts')
+})
+
+test('an even sample spans the list and leaves short lists unchanged', () => {
+  expect(evenSample(['a', 'b'], 3)).toEqual(['a', 'b'])
+  expect(evenSample(Array.from({ length: 37 }, (_, i) => i), 8)).toEqual([0, 4, 9, 13, 18, 23, 27, 32])
 })
 
 test('counts use singular and plural', () => {
