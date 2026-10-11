@@ -1,5 +1,6 @@
 export const SKILLS_STORE_KEY = 'skills'
 export const SKILLS_DIR = '.claude/skills'
+export const SYNTHESIS_ENV = 'HIVE_SKILL_SYNTHESIS'
 export const SKILL_FILE = 'SKILL.md'
 export const PROMOTE_MIN_SESSIONS = 3
 export const ARCHIVE_AFTER_IDLE_SESSIONS = 10
