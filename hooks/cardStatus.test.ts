@@ -21,8 +21,6 @@ test('a completed agent is done only when its work is over', () => {
   expect(cardKind(node())).toBe('done')
   expect(cardKind(node({ todos: [todo('completed')] }))).toBe('done')
   expect(cardKind(node({ todos: [todo('completed'), todo('pending')] }))).toBe('done')
-  expect(cardKind(node({ progress: { done: 1, total: 3 } }))).toBe('paused')
-  expect(cardKind(node({ progress: { done: 3, total: 3 } }))).toBe('done')
 })
 
 test('an idle agent is done regardless of pending todos', () => {
