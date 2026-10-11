@@ -45,7 +45,7 @@ import { makeThread } from './thread'
 import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
-import { MAIN, buildTree, flatten, isLive, rememberAgents, needsCompact, trackLifecycle, visibleAgents } from './tree'
+import { MAIN, buildTree, flatten, isLive, rememberAgents, trackLifecycle, visibleAgents } from './tree'
 import { finishWorkflowAgent, recordWorkflowAgent, recordWorkflowLaunch, workflowAgents, workflowLaunches } from './workflowRuns'
 import { mainTurn, wakeClock } from './clock'
 
@@ -554,7 +554,7 @@ export const register: Register = on => {
           {quotas.map(quota => <Quota {...quota} />)}
         </Section>
         <Section title="AGENTS" icon={ICONS.agents}>
-          {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} compact={needsCompact(allRows, maxRows)} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
+          {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
         <Section title="SKILLS" icon={ICONS.steps}>
