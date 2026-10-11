@@ -13,7 +13,7 @@ test('unchanged text is injected once per session', () => {
 })
 
 test('context nudge is imperative and names both commands', () => {
-  expect(CONTEXT_NUDGE_TOKENS).toBe(120_000)
+  expect(CONTEXT_NUDGE_TOKENS).toBe(180_000)
   expect(CONTEXT_NUDGE).toContain('/compact')
   expect(CONTEXT_NUDGE).toContain('/clear')
 })

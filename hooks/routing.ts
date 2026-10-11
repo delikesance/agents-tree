@@ -7,23 +7,9 @@ export const withGoalContext = (request: string, context?: string) => (context ?
 export const truncateGoal = (line: string) => (line.length > GOAL_MAX ? `${line.slice(0, GOAL_MAX - 1)}…` : line)
 
 export const firstLine = (text: string) => text.split('\n').map(l => l.trim()).find(Boolean) ?? ''
-const MODEL_TIERS = ['haiku', 'sonnet', 'opus']
-export const ROUTER_PROMPT = `Tu routes une tâche déléguée à un sous-agent pour minimiser le coût sans perdre en qualité.
-Choisis le modèle le moins cher qui suffit: "haiku" pour lire, chercher, lister, compter, résumer; "sonnet" pour écrire ou modifier du code, déboguer, analyser; "opus" seulement pour un raisonnement ou une architecture vraiment difficiles.
-Réécris aussi le prompt: précis, autonome, avec l'objectif, les chemins ou éléments concernés, les contraintes et une limite de taille de la réponse. Garde tous les faits du prompt d'origine, n'en invente aucun.
-Réponds uniquement par un JSON {"model": "...", "prompt": "..."}.\n\nPrompt d'origine:\n`
 
-export type Route = { model: string; prompt: string; source: string }
+export type Route = { model: string; source: string }
 
-export const parseRoute = (text: string): Route | undefined => {
-  try {
-    const { model, prompt } = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
-    return MODEL_TIERS.includes(model) && typeof prompt === 'string' && prompt.trim() ? { model, prompt, source: 'haiku' } : undefined
-  } catch {
-    return undefined
-  }
-}
-export const ROUTER_MIN_PROMPT = 200
 const REPORT_LIMIT_NOTE = 'Final report: 15 lines max, paths and line numbers rather than file contents.'
 
 const REPORT_LIMIT_PRESENT = /\b\d+\s*(lines?|lignes?)\b/i
@@ -33,7 +19,3 @@ const MAP_POINTER = `Read ${MAP_FILE} first, do not sweep the repo.`
 
 export const withMapPointer = (prompt: string, mapExists: boolean) => (mapExists && !prompt.includes(MAP_FILE) ? `${MAP_POINTER}\n\n${prompt}` : prompt)
 export const isQuestion = (line: string) => line.trim().endsWith('?')
-
-const FILE_PATH = /[\w-]+(?:\/[\w.-]+)+|[\w-]+\.\w{1,5}\b/
-
-export const isWellBriefed = (prompt: string) => FILE_PATH.test(prompt) && (prompt.includes(REPORT_LIMIT_NOTE) || REPORT_LIMIT_PRESENT.test(prompt))
