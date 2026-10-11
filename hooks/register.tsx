@@ -46,6 +46,7 @@ import { dismissAgent, selectAgent, selectedAgent } from './select'
 import { loadSnapshot, saveSnapshot } from './snapshot'
 import { trimResultContent } from './trim'
 import { MAIN, buildTree, flatten, isLive, rememberAgents, needsCompact, trackLifecycle, visibleAgents } from './tree'
+import { finishWorkflowAgent, recordWorkflowAgent, workflowAgents } from './workflowRuns'
 import { mainTurn, wakeClock } from './clock'
 
 const usageByAgent = atom({ plugin: 'hive', key: 'usage' } as const, {} as Record<string, AgentUsage>)
@@ -422,6 +423,7 @@ export const register: Register = on => {
       void update($, mainFinishedAtom, () => true)
       void learning.onTurnComplete(skillsOf($))
     }
+    if (e.agentId) finishWorkflowAgent(e.agentId, Date.now())
     void persistState($).catch(() => undefined)
     return next(e)
   })
@@ -466,6 +468,7 @@ export const register: Register = on => {
       if (model) void update($, modelByAgent, all => ({ ...all, [agentId]: model }))
       if (route) void update($, routeSourceByAgent, all => ({ ...all, [agentId]: route.source }))
       void setGoal($, agentId, e.prompt).catch(() => undefined)
+      if (e.workflow) recordWorkflowAgent({ id: agentId, ...e.workflow, type: e.subagentType ?? 'agent', startedAt: Date.now() })
     }
     return result
   })
@@ -493,7 +496,7 @@ export const register: Register = on => {
     const now = Date.now()
     const agents = rememberAgents(await $.agent.list())
     trackLifecycle(agents, now)
-    const root = buildTree(agents, usage, activity, goals, progress, todos, models, await read($, mainFinishedAtom), now)
+    const root = buildTree(agents, usage, activity, goals, progress, todos, models, await read($, mainFinishedAtom), now, workflowAgents())
     const allRows = flatten(root)
     const maxRows = Math.max(1, (e.viewport?.rows ?? 24) - ROW_CHROME)
     const { shown: rows, hidden } = visibleAgents(allRows, maxRows)
