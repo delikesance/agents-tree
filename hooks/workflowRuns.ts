@@ -1,6 +1,8 @@
 export type WorkflowAgent = { id: string; runId: string; agentIndex: number; type: string; label: string; startedAt: number; endedAt?: number }
 
 const agents = new Map<string, WorkflowAgent>()
+const taskIds = new Map<string, string>()
+const LAUNCH_RESULT = /Task ID: (\S+)[\s\S]*?Run ID: (wf_\S+)/
 const LAUNCH_GRACE_MS = 60_000
 let launches: number[] = []
 
@@ -20,6 +22,13 @@ export const finishWorkflowAgent = (id: string, now: number) => {
 
 export const workflowAgents = (): WorkflowAgent[] => [...agents.values()]
 
+export const recordWorkflowTask = (launchResult: string) => {
+  const [, taskId, runId] = LAUNCH_RESULT.exec(launchResult) ?? []
+  if (taskId && runId) taskIds.set(runId, taskId)
+}
+
+export const workflowTaskId = (nodeId: string) => taskIds.get(nodeId.replace(/^workflow:/, ''))
+
 export const workflowNodeId = (runId: string) => `workflow:${runId}`
 
 export const workflowLabel = (runId: string) => `workflow · ${runId.replace(/^wf_/, '').slice(0, 8)}`
@@ -33,5 +42,6 @@ export const groupByRun = (members: readonly WorkflowAgent[]): Map<string, Workf
 
 export const forgetWorkflowAgents = () => {
   agents.clear()
+  taskIds.clear()
   launches = []
 }

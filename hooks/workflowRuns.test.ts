@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { finishWorkflowAgent, forgetWorkflowAgents, groupByRun, recordWorkflowAgent, workflowAgents, workflowLabel } from './workflowRuns'
+import { finishWorkflowAgent, forgetWorkflowAgents, groupByRun, recordWorkflowAgent, recordWorkflowTask, workflowAgents, workflowLabel, workflowTaskId } from './workflowRuns'
 
 const member = (id: string, runId: string, agentIndex: number) => ({ id, runId, agentIndex, type: 'worker', label: id, startedAt: 1 })
 
@@ -21,4 +21,12 @@ test('finishing a workflow agent stamps its end once', () => {
 
 test('the run label drops the wf_ prefix and shortens the id', () => {
   expect(workflowLabel('wf_abcdefghijkl')).toBe('workflow · abcdefgh')
+})
+
+test('the Workflow launch result maps a run node to its stoppable task id', () => {
+  recordWorkflowTask('Workflow launched.\nTask ID: wiry0ps9s\nTranscript dir: x\nRun ID: wf_ee3c2975-adb\n')
+  expect(workflowTaskId('workflow:wf_ee3c2975-adb')).toBe('wiry0ps9s')
+  expect(workflowTaskId('workflow:wf_other')).toBeUndefined()
+  forgetWorkflowAgents()
+  expect(workflowTaskId('workflow:wf_ee3c2975-adb')).toBeUndefined()
 })
