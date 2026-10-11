@@ -1,5 +1,5 @@
 import type { SkillDeps } from './skillHost'
-import { groupSignal, readyToPromote, reject, restore } from './skillLedger'
+import { groupSignal, isInactive, readyToPromote, reject, remove, removeInactive, restore } from './skillLedger'
 import { recordUse, revalidate } from './skillLifecycle'
 import { closeSession, flagStale, isLive } from './skillMaintenance'
 import { promotionPatch } from './skillPromotion'
@@ -14,6 +14,11 @@ const SESSION_STORE_KEY = `${SKILLS_STORE_KEY}.session`
 const FILE_ARGS = ['file_path', 'path', 'notebook_path']
 
 const filesOf = (call: Record<string, unknown>) => FILE_ARGS.map(key => call[key]).filter((value): value is string => typeof value === 'string' && value !== '')
+
+const dropSkillFiles = async (deps: SkillDeps, records: SkillRecord[]) => {
+  const { cwd } = deps
+  if (cwd) await Promise.all(records.filter(isLive).map(record => removeSkill(deps.fs, cwd, record.slug)))
+}
 
 export function createSkillLearning() {
   const detector = createSignalDetector()
@@ -161,6 +166,17 @@ export function createSkillLearning() {
       await promote(deps, cwd, slug)
     },
     restore: (deps: SkillDeps, slug: string) => mutate(deps, ledger => startPromotions(deps, restore(resetIdle(ledger, slug), slug))),
+    dismiss: (deps: SkillDeps, slug: string) =>
+      mutate(deps, async ledger => {
+        const record = ledger[slug]
+        if (record) await dropSkillFiles(deps, [record])
+        return remove(ledger, slug)
+      }),
+    dismissInactive: (deps: SkillDeps) =>
+      mutate(deps, async ledger => {
+        await dropSkillFiles(deps, Object.values(ledger).filter(isInactive))
+        return removeInactive(ledger)
+      }),
     revalidate: (deps: SkillDeps, slug: string) => mutate(deps, async ledger => revalidate(ledger, slug, await headCommit(deps.fs))),
   }
 }
