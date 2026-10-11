@@ -32,5 +32,17 @@ test('too many groups are merged, never dropped', () => {
   const groups = groupFiles(files)
   expect(groups.length).toBeLessThanOrEqual(MAX_GROUPS)
   expect(groups.flatMap(group => group.files)).toHaveLength(200)
-  expect(groups.reduce((sum, group) => sum + group.merged, 0)).toBe(200 - groups.length)
+  expect(groups.reduce((sum, group) => sum + group.parts.length, 0)).toBe(200)
+})
+
+test('only siblings are merged, and the name lists what it covers', () => {
+  const files = [...Array.from({ length: 39 }, (_, i) => `crates/c${i}/a.ts`), 'web/ui/beam.ts', 'web/ui/hero.ts', '.github/ci.yml']
+  const groups = groupFiles(files)
+  expect(groups.length).toBeLessThanOrEqual(MAX_GROUPS)
+  expect(groups.map(group => group.name)).toEqual(expect.arrayContaining(['.github/', 'web/ui/', 'crates/{c1,c0}']))
+})
+
+test('a prefix cluster needs two source files, tests do not count', () => {
+  const files = [...numbered('hooks', 'mapPart', 8), 'hooks/breaker.ts', 'hooks/breaker.test.ts', ...numbered('hooks', 'flowStep', 7)]
+  expect(names(files)).toEqual(['hooks/map*', 'hooks/flow*', 'hooks/other'])
 })

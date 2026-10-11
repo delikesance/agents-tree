@@ -8,10 +8,10 @@ export const MAP_SUMMARY_MAX_TOKENS = 800
 const SAMPLE_FILES = 8
 const SUMMARY_MAX = 120
 
-export const SUMMARY_PROMPT = `For each group below, write one line "<group>: <what it is for, 12 words max>". Reply with those lines only, one per group, nothing else.\n\n`
+export const SUMMARY_PROMPT = `For each group below, write one line "<group>: <what it is for, 12 words max>". Reply with those lines only, one per group, nothing else. Describe only the files listed after each group name (test files count); never mention missing or stray files.\n\n`
 
 export const summaryInput = (groups: Group[], symbols: Symbols) =>
-  groups.map(({ name, files }) => `${name}: ${files.slice(0, SAMPLE_FILES).map(file => symbolEntry(file, symbols) ?? baseName(file)).join(', ')}`).join('\n')
+  groups.map(({ name, files, tests }) => `${name}: ${(files.length ? files : tests).slice(0, SAMPLE_FILES).map(file => symbolEntry(file, symbols) ?? baseName(file)).join(', ')}`).join('\n')
 
 const cleanName = (name: string) => name.replace(/^[-*\s`]+|[\s`/]+$/g, '')
 
