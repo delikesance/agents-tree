@@ -3,12 +3,14 @@ import { jaccard } from './skillLedger'
 import type { SkillLedger } from './skillTypes'
 
 export type DiscoveryCandidate = { slug: string; title: string; steps: string[]; files: string[]; commands: string[] }
-export type Criterion = 'multi-step' | 'grounded' | 'verifiable' | 'new'
-export type Verdict = { candidate: DiscoveryCandidate; failed: Criterion[] }
+export type Criterion = 'multi-step' | 'grounded' | 'verifiable' | 'new' | 'not-in-context'
+export type Verdict = { candidate: DiscoveryCandidate; failed: Criterion[]; covered: number }
 
 const MIN_STEPS = 3
 const MAX_SLUG_CHARS = 40
 const MAX_OVERLAP = 0.4
+export const CONTEXT_OVERLAP = 0.7
+const SHINGLE_SIZE = 3
 const RUNNERS = ['bun', 'npm', 'pnpm', 'yarn', 'make', 'python3', 'git', 'cargo', 'go', 'pytest', 'tsc']
 const HEADING = /^#{1,3}\s+(.+)/
 const ITEM = /^\s*(?:[-*]|\d+\.)\s+(.+)/
@@ -48,7 +50,22 @@ export function markdownCandidates(text: string): DiscoveryCandidate[] {
   return sections.filter(section => section.steps.length).map(section => candidateOf(section.title, section.steps))
 }
 
-const criteria: Record<Criterion, (candidate: DiscoveryCandidate, ledger: SkillLedger) => boolean> = {
+const shinglesOf = (text: string) => {
+  const tokens = tokenize(text)
+  const size = Math.min(SHINGLE_SIZE, tokens.length)
+  return Array.from({ length: Math.max(tokens.length - size + 1, 0) }, (_, index) => tokens.slice(index, index + size).join(' '))
+}
+
+const coveredSteps = (candidate: DiscoveryCandidate, context: string[]) => {
+  const contextLines = context.flatMap(text => text.split('\n')).map(shinglesOf)
+  const isCovered = (step: string) => {
+    const shingles = shinglesOf(step)
+    return contextLines.some(lines => jaccard(shingles, lines) >= CONTEXT_OVERLAP)
+  }
+  return candidate.steps.filter(isCovered).length
+}
+
+const criteria: Record<Criterion, (candidate: DiscoveryCandidate, ledger: SkillLedger, covered: number) => boolean> = {
   'multi-step': candidate => candidate.steps.length >= MIN_STEPS,
   grounded: candidate => candidate.files.length > 0,
   verifiable: candidate => candidate.commands.length > 0,
@@ -56,9 +73,14 @@ const criteria: Record<Criterion, (candidate: DiscoveryCandidate, ledger: SkillL
     const tokens = tokenize(candidate.title)
     return !ledger[candidate.slug] && Object.values(ledger).every(record => jaccard(record.tags, tokens) < MAX_OVERLAP)
   },
+  'not-in-context': (candidate, _ledger, covered) => covered < candidate.steps.length,
 }
 
-export const judge = (candidate: DiscoveryCandidate, ledger: SkillLedger): Verdict => ({
-  candidate,
-  failed: (Object.keys(criteria) as Criterion[]).filter(name => !criteria[name](candidate, ledger)),
-})
+export const judge = (candidate: DiscoveryCandidate, ledger: SkillLedger, context: string[] = []): Verdict => {
+  const covered = coveredSteps(candidate, context)
+  return {
+    candidate,
+    covered,
+    failed: (Object.keys(criteria) as Criterion[]).filter(name => !criteria[name](candidate, ledger, covered)),
+  }
+}
