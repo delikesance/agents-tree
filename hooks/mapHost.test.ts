@@ -28,14 +28,14 @@ test('the map is written under the project directory, git runs there', async () 
   const files: Record<string, string> = {}
   const { $, runs } = host(files, { isAnswered: true, text: 'src: code' })
   await ensureProjectMap($, '/p')
-  expect(files['/p/.claude/project-map.md']).toContain('- src/ -> 1 files (.ts): code')
+  expect(files['/p/.claude/project-map.md']).toContain('- src/ (1 files): code')
   expect(runs.every(({ cwd }) => cwd === '/p')).toBe(true)
 })
 
 test('an unanswered model call still writes the map', async () => {
   const files: Record<string, string> = {}
   await ensureProjectMap(host(files, { isAnswered: false }).$, '/q')
-  expect(files['/q/.claude/project-map.md']).toContain('- src/ -> 1 files (.ts)\n')
+  expect(files['/q/.claude/project-map.md']).toContain('- src/ (1 files)\n')
 })
 
 test('the map presence is read from the project directory', async () => {

@@ -1,10 +1,16 @@
 import { withTimeout } from './brief'
+import { groupFiles } from './mapGroups'
+import type { Group } from './mapGroups'
+import { manualBlock } from './mapManual'
 import { MAP_FILE } from './mapState'
 import type { MapReader, Run } from './mapState'
-import { SUMMARY_PROMPT, buildMap, parseSummaries, summaryInput, topDirectories } from './mapSkeleton'
+import { buildMap } from './mapSkeleton'
+import { SUMMARY_PROMPT, parseSummaries, summaryInput } from './mapSummaries'
+import { readSymbols } from './mapSymbols'
+import type { Symbols } from './mapSymbols'
 import { detectTestCommand } from './testCommand'
 
-const SUMMARY_TIMEOUT_MS = 20_000
+export const SUMMARY_TIMEOUT_MS = 20_000
 
 export type MapIo = MapReader & {
   write: (path: string, text: string) => Promise<void>
@@ -17,14 +23,19 @@ const trackedFiles = async (run: Run) => {
   return stdout.split('\0').filter(Boolean)
 }
 
-const summariesOf = async (complete: MapIo['complete'], files: string[]) => {
-  const dirs = topDirectories(files)
-  const text = await withTimeout(complete(SUMMARY_PROMPT + summaryInput(dirs)), SUMMARY_TIMEOUT_MS).catch(() => undefined)
-  return parseSummaries(text ?? '', dirs)
+const summariesOf = async (complete: MapIo['complete'], groups: Group[], symbols: Symbols) => {
+  const text = await withTimeout(complete(SUMMARY_PROMPT + summaryInput(groups, symbols)), SUMMARY_TIMEOUT_MS).catch(() => undefined)
+  return parseSummaries(text ?? '', groups)
 }
 
 export const writeMap = async ({ run, read, write, complete }: MapIo, head: string) => {
   const files = await trackedFiles(run)
-  const [testCommand, summaries] = await Promise.all([detectTestCommand(read), summariesOf(complete, files)])
-  await write(MAP_FILE, buildMap({ head, files, testCommand, summaries }))
+  const groups = groupFiles(files)
+  const [testCommand, symbols, existing] = await Promise.all([
+    detectTestCommand(read),
+    readSymbols(read, groups.flatMap(group => group.files)),
+    read(MAP_FILE).catch(() => undefined),
+  ])
+  const summaries = await summariesOf(complete, groups, symbols)
+  await write(MAP_FILE, buildMap({ head, files, groups, testCommand, summaries, symbols, manual: manualBlock(existing) }))
 }
