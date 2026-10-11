@@ -7,6 +7,8 @@ import { skillPath } from './skillWriter'
 
 const CWD = '/p'
 const SYNTHESIS = JSON.stringify({ description: 'Use when editing the source module', steps: ['Read the module', 'Edit it'] })
+const SUMMARY = 'Sert à modifier le module source'
+const isSynthesis = (command: string[]) => command.at(-1)?.includes('JSON') ?? false
 
 const harness = () => {
   const files: Record<string, string> = { '/p/src/a.ts': 'x' }
@@ -18,7 +20,7 @@ const harness = () => {
       read: async path => files[path],
       write: async (path, text) => void (files[path] = text),
       remove: async path => void delete files[path],
-      run: async command => (command.includes('claude') ? SYNTHESIS : command[1] === 'diff' ? state.diff : 'head1\n'),
+      run: async command => (command.includes('claude') ? (isSynthesis(command) ? SYNTHESIS : SUMMARY) : command[1] === 'diff' ? state.diff : 'head1\n'),
     },
     cwd: CWD,
     now: () => ++state.clock,
@@ -143,4 +145,12 @@ test('a failed synthesis keeps the candidate and retries later', async () => {
   await runSession(h, 's4')
   await settle(h)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
+})
+
+test('a candidate gets a stored one-line summary', async () => {
+  const h = harness()
+  await runSession(h, 's1')
+  await settle(h)
+  const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', summary: SUMMARY })
 })

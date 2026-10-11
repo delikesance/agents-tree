@@ -12,12 +12,12 @@ test('rows are ordered stale, candidate, active by recent use, then closed', () 
   expect(rows.map(row => row.slug)).toEqual(['s', 'c', 'new', 'old', 'gone'])
 })
 
-test('row summary prefers the first signal note, collapsed and truncated to 80 chars', () => {
-  const note = `  first\n\tline   ${'x'.repeat(100)}`
-  const withNote = { ...record('n', 'active'), signals: [{ kind: 'retry' as const, sessionId: 's', at: 1, files: [], tools: [], note }] }
-  const [row] = viewSkills(ledger(withNote))
-  expect(row.summary).toBe(`first line ${'x'.repeat(68)}…`)
-  expect(row.summary.length).toBe(80)
+test('row summary shows the stored summary, or a pending placeholder', () => {
+  const rows = viewSkills(ledger(record('p', 'candidate'), { ...record('d', 'candidate'), summary: 'Sert à relire le module' }))
+  const pending = rows.find(row => row.slug === 'p')
+  const done = rows.find(row => row.slug === 'd')
+  expect(pending?.summary).toBe('résumé en cours…')
+  expect(done?.summary).toBe('Sert à relire le module')
 })
 
 test('summary lists non-empty counts', () => {
