@@ -324,6 +324,28 @@ export const register: Register = on => {
     return next(e)
   })
 
+  const served: Record<string, ($: Parameters<typeof saveEntry>[0], e: Record<string, unknown> & { agentId?: string }) => Promise<{ result: string }>> = {
+    [`${TOOL_PREFIX}remember`]: async ($, e) => {
+      const parsed = parseRemember(e as { key?: string; text?: string; tags?: string[] })
+      if ('error' in parsed) return { result: parsed.error }
+      await saveEntry($, { ...parsed.entry, at: Date.now() })
+      return { result: `Enregistré: ${parsed.entry.key}` }
+    },
+    [`${TOOL_PREFIX}recall`]: async ($, e) => {
+      const { query = '', key } = e as { query?: string; key?: string }
+      const entries = await loadKnowledge($)
+      const exact = key && entries.find(entry => entry.key === key)
+      return { result: exact ? exact.text : search(entries, query || key || '') }
+    },
+    [`${TOOL_PREFIX}progress`]: async ($, e) => {
+      const { done, total, steps } = e as unknown as GoalProgress & { steps?: string[] }
+      const agent = e.agentId ?? MAIN
+      void update($, progressByAgent, all => ({ ...all, [agent]: { done, total } }))
+      if (steps?.length) void update($, todosByAgent, all => ({ ...all, [agent]: stepsToTodos(steps, done) }))
+      return { result: `${done}/${total}` }
+    },
+  }
+
   on('tool.call', async ($, e, next) => {
     const agent = e.agentId ?? MAIN
     wakeAnimation($)
@@ -335,6 +357,8 @@ export const register: Register = on => {
     }
     if (e.tool === 'TaskCreate') void update($, progressByAgent, all => ({ ...all, [agent]: countTask(all[agent], { total: 1 }) }))
     if (e.tool === 'TaskUpdate' && e.status === TASK_STATUS_DONE) void update($, progressByAgent, all => ({ ...all, [agent]: countTask(all[agent], { done: 1 }) }))
+    const serve = served[e.tool]
+    if (serve) return serve($, e as Record<string, unknown>)
     const key = `${agent}:${e.tool}:${activity}`
     startCall()
     if (stopped.has(key)) return { deny: BREAKER_DENY }
@@ -368,28 +392,6 @@ export const register: Register = on => {
     })
     if (savedTokens) void update($, trimmedTokens, total => total + savedTokens)
     return next({ ...e, message: { ...e.message, content } })
-  })
-
-  on('tool.call', { tool: `${TOOL_PREFIX}remember` }, async ($, e) => {
-    const parsed = parseRemember(e as unknown as { key?: string; text?: string; tags?: string[] })
-    if ('error' in parsed) return { result: parsed.error }
-    await saveEntry($, { ...parsed.entry, at: Date.now() })
-    return { result: `Enregistré: ${parsed.entry.key}` }
-  })
-
-  on('tool.call', { tool: `${TOOL_PREFIX}recall` }, async ($, e) => {
-    const { query = '', key } = e as unknown as { query?: string; key?: string }
-    const entries = await loadKnowledge($)
-    const exact = key && entries.find(entry => entry.key === key)
-    return { result: exact ? exact.text : search(entries, query || key || '') }
-  })
-
-  on('tool.call', { tool: `${TOOL_PREFIX}progress` }, async ($, e) => {
-    const { done, total, steps } = e as unknown as GoalProgress & { steps?: string[] }
-    const agent = e.agentId ?? MAIN
-    void update($, progressByAgent, all => ({ ...all, [agent]: { done, total } }))
-    if (steps?.length) void update($, todosByAgent, all => ({ ...all, [agent]: stepsToTodos(steps, done) }))
-    return { result: `${done}/${total}` }
   })
 
   on('prompt.compose', async ($, e, next) => {
