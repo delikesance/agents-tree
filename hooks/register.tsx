@@ -503,7 +503,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" padding={1}>
-        <Banner compact={(e.viewport?.rows ?? 24) < COMPACT_BANNER_ROWS} />
+        <Banner compact={(e.viewport?.rows ?? 24) < COMPACT_BANNER_ROWS} cwd={projectDir.cwd} />
         <Section title="CONTEXTE" icon={ICONS.context} aside={<ContextFigure percent={contextPercent} />}>
           <ContextBreakdown percent={contextPercent} usage={contextUsage} segments={segments} />
         </Section>
