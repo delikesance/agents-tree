@@ -6,7 +6,6 @@ export type SkillRow = {
   uses: number
   cleanUses: number
   idleSessions: number
-  label: string
   summary: string
 }
 
@@ -32,7 +31,6 @@ const toRow = (record: SkillRecord): SkillRow => ({
   uses: record.uses,
   cleanUses: record.cleanUses,
   idleSessions: record.idleSessions,
-  label: `${record.slug} · ${record.cleanUses}/${record.uses}`,
   summary: record.summary ?? PENDING_SUMMARY,
 })
 
