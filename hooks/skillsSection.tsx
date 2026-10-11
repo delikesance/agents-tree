@@ -10,6 +10,7 @@ type Handlers = { onReject: (slug: string) => void; onRestore: (slug: string) =>
 const MAX_VISIBLE_ROWS = 6
 const ACTION_GAP = 2
 const ROW_GAP = 2
+const EMPTY_LABEL = 'aucun skill appris pour le moment'
 
 const STATUS_COLORS: Record<SkillStatus, string> = {
   active: PALETTE.badgeGreen,
@@ -39,6 +40,7 @@ export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
   return ({ ledger, ...handlers }: { ledger: SkillLedger } & Handlers) => {
     const rows = viewSkills(ledger)
     const hidden = rows.length - MAX_VISIBLE_ROWS
+    if (rows.length === 0) return <Text color={PALETTE.muted}>{EMPTY_LABEL}</Text>
     return (
       <Box flexDirection="column">
         <Text color={PALETTE.muted}>{skillsSummary(ledger)}</Text>

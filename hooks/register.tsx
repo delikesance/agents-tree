@@ -552,11 +552,9 @@ export const register: Register = on => {
           {rows.map(({ node, depth, last, ancestorsLast }) => <AgentCard node={node} depth={depth} last={last} ancestorsLast={ancestorsLast} compact={needsCompact(allRows, maxRows)} route={routes[node.id]} onOpen={open} onDismiss={dismiss} />)}
           {hidden > 0 && <Text dimColor>{`+${hidden}`}</Text>}
         </Section>
-        {Object.keys(skills).length > 0 && (
-          <Section title="SKILLS" icon={ICONS.steps}>
-            <SkillsSection ledger={skills} onReject={slug => changeSkill(learning.reject(skillsOf($), slug))} onRestore={slug => changeSkill(learning.restore(skillsOf($), slug))} onRevalidate={slug => changeSkill(learning.revalidate(skillsOf($), slug))} />
-          </Section>
-        )}
+        <Section title="SKILLS" icon={ICONS.steps}>
+          <SkillsSection ledger={skills} onReject={slug => changeSkill(learning.reject(skillsOf($), slug))} onRestore={slug => changeSkill(learning.restore(skillsOf($), slug))} onRevalidate={slug => changeSkill(learning.revalidate(skillsOf($), slug))} />
+        </Section>
       </Box>
     )
   })
