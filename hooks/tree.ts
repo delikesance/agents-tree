@@ -63,7 +63,7 @@ const workflowGroup = (runId: string, agents: WorkflowAgent[], members: Node[]):
   const done = segments.filter(Boolean).length
   const elapsed = Math.max(...members.map(m => m.elapsed ?? 0))
   const summary = { id, label: workflowLabel(runId), status: done < members.length ? 'running' : 'completed', goal: workflowGoal(agents), segments, progress: { done, total: members.length }, elapsed, reveal: revealOf(id), children: members }
-  return { ...summary, usage: sumTree(summary), children: [] }
+  return { ...summary, usage: sumTree(summary), children: members }
 }
 
 export const buildTree = (agents: readonly TrackedAgent[], usage: Record<string, AgentUsage>, activity: Record<string, string>, goals: Record<string, string>, progress: Record<string, GoalProgress>, todos: Record<string, Todo[]>, models: Record<string, string>, mainFinished: boolean, now: number, workflow: readonly WorkflowAgent[] = [], launches: readonly number[] = []): Node => {
