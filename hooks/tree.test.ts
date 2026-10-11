@@ -40,9 +40,22 @@ test('workflow agents hang under one workflow node per run, summed and ordered',
   expect(group?.usage?.cost).toBe(3)
 })
 
-test('a workflow node is completed once every agent ended', () => {
+test('a workflow node closes itself once every agent ended', () => {
   const members = [{ id: 'w1', runId: 'wf_x', agentIndex: 1, type: 'worker', label: 'b', startedAt: 0, endedAt: 3 }]
-  expect(buildTree([], {}, {}, {}, {}, {}, {}, false, 10, members).children[0]?.status).toBe('completed')
+  expect(buildTree([], {}, {}, {}, {}, {}, {}, false, 10, members).children).toEqual([])
+})
+
+test('a workflow agent the host reports as ended counts as ended', () => {
+  const members = [{ id: 'w1', runId: 'wf_y', agentIndex: 1, type: 'worker', label: 'b', startedAt: 0 }]
+  const hosted = [{ id: 'w1', status: 'completed', type: 'worker' }] as TrackedAgent[]
+  const root = buildTree(hosted, {}, {}, {}, {}, {}, {}, true, 10, members)
+  expect(flatten(root).some(({ node }) => node.id === 'w1')).toBe(false)
+})
+
+test('a workflow agent still running keeps its node open', () => {
+  const members = [{ id: 'w1', runId: 'wf_z', agentIndex: 1, type: 'worker', label: 'b', startedAt: 0 }]
+  const hosted = [{ id: 'w1', status: 'running', type: 'worker' }] as TrackedAgent[]
+  expect(buildTree(hosted, {}, {}, {}, {}, {}, {}, false, 10, members).children[0]?.status).toBe('running')
 })
 
 const row = (node: Partial<Node> & { id: string }, depth: number): Row => ({ node: { label: node.id, status: 'completed', reveal: 1, children: [], ...node }, depth, last: true, ancestorsLast: [] })
