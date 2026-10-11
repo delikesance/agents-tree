@@ -20,9 +20,8 @@ const SEGMENT_GLYPH = '━'
 const SEGMENT_GLYPH_CELLS = 200
 const CARD_PADDING_X = 2
 const INDENT = 2
+const RAIL_CELLS = 1
 const GUTTER_MARK = '│'
-const CONNECTOR_MIDDLE = '├─ '
-const CONNECTOR_LAST = '└─ '
 const SPRITE_GAP = 2
 const SECTION_MARGIN_TOP = 2
 const SPINNER_FRAMES = [0xee06, 0xee07, 0xee08, 0xee09, 0xee0a, 0xee0b].map(code => String.fromCodePoint(code))
@@ -93,11 +92,90 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
     </Box>
   )
 
-  const AgentCard = ({ node, depth, last, ancestorsLast = [], compact = false, route, onOpen, onDismiss }: { node: Node; depth: number; last: boolean; ancestorsLast?: boolean[]; compact?: boolean; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
+  const RAIL_COLORS = { done: PALETTE.green, running: PALETTE.yellow, failed: PALETTE.red }
+
+  const SegmentPips = ({ segments }: { segments: boolean[] }) => (
+    <Box columnGap={1} flexGrow={1} flexShrink={0} width={0}>
+      {segments.map(done => (
+        <Box flexGrow={1} width={0} height={1} overflow="hidden">
+          <Text color={done ? PALETTE.green : PALETTE.yellow}>{SEGMENT_GLYPH.repeat(SEGMENT_GLYPH_CELLS)}</Text>
+        </Box>
+      ))}
+    </Box>
+  )
+
+  const CompactCard = ({ node, route, onOpen, onDismiss }: { node: Node; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
     const kind = cardKind(node)
     const status = STATUSES[kind]
     const done = kind === 'done'
-    const lines = cardHeight(node, compact)
+    return (
+      <Box flexGrow={1} backgroundColor={done ? doneTint(node.usage?.model ?? node.model ?? '') : PALETTE.card} overflow="hidden">
+        <Box width={RAIL_CELLS} flexShrink={0} backgroundColor={RAIL_COLORS[kind as keyof typeof RAIL_COLORS] ?? PALETTE.rule}><Text> </Text></Box>
+        <Box flexGrow={1} flexDirection="column" paddingX={CARD_PADDING_X}>
+          <Box columnGap={2}>
+            <Text wrap="truncate-end">
+              <Text bold color={PALETTE.text}>{node.label}</Text>{'  '}
+              <Text bold backgroundColor={status.background} color={status.color}>{` ${status.label} `}</Text>
+              {node.elapsed !== undefined && <Text color={PALETTE.muted}>  {done ? 'en ' : ''}{formatDuration(node.elapsed)}</Text>}
+            </Text>
+            <Box flexGrow={1} />
+            {node.usage && <Text color={PALETTE.muted}>{shortModel(node.usage.model)}{route && ` · ${route}`}  {formatCost(node.usage.cost)}</Text>}
+            <Box columnGap={ACTION_GAP}>
+              {!node.segments && <ActionButton id={`open:${node.id}`} label="ouvrir ▸" background={PALETTE.rule} onPress={() => onOpen(node.id)} />}
+              {!isLive(node.status) && <ActionButton id={`dismiss:${node.id}`} label={`retirer ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={() => onDismiss(node.id)} />}
+            </Box>
+          </Box>
+          <Box columnGap={2}>
+            <Text wrap="truncate-end" bold color={PALETTE.text}>{status.mark} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text>
+            {node.segments?.length ? (
+              <>
+                <SegmentPips segments={node.segments} />
+                <Text color={PALETTE.muted}>{node.progress?.done}/{node.progress?.total} terminés</Text>
+              </>
+            ) : (
+              node.usage && <Text color={PALETTE.muted}>{ICONS.download} {formatTokens(node.usage.input + node.usage.cacheRead + node.usage.cacheWrite)}  {ICONS.upload} {formatTokens(node.usage.output)}  {ICONS.requests} {node.usage.steps}</Text>
+            )}
+          </Box>
+        </Box>
+      </Box>
+    )
+  }
+
+  const MainCard = ({ node, route }: { node: Node; route?: string }) => {
+    const kind = cardKind(node)
+    const status = STATUSES[kind]
+    const done = kind === 'done'
+    return (
+      <Box flexGrow={1} flexDirection="column" backgroundColor={done ? doneTint(node.usage?.model ?? node.model ?? '') : PALETTE.card} marginBottom={CARD_MARGIN_BOTTOM} paddingX={CARD_PADDING_X} paddingY={CARD_PADDING_Y} overflow="hidden">
+        <Box alignItems="center">
+          <Sprite node={node} />
+          <Box flexDirection="column" flexGrow={1}>
+            <Box justifyContent="space-between" flexWrap="wrap" columnGap={2}>
+              <Text>
+                <Text bold color={PALETTE.text}>{node.label}</Text>{'  '}
+                <Text bold backgroundColor={status.background} color={status.color}>{` ${status.label} `}</Text>
+                {node.elapsed !== undefined && <Text color={PALETTE.muted}>  {done ? 'en ' : ''}{formatDuration(node.elapsed)}</Text>}
+              </Text>
+              {node.usage && <Text color={PALETTE.muted}>{shortModel(node.usage.model)}{route && ` · ${route}`}  {formatCost(node.usage.cost)}</Text>}
+            </Box>
+            <Box marginY={GOAL_MARGIN_Y}>
+              <Text bold color={PALETTE.text}>{done ? ICONS.done : ICONS.goal} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text>
+            </Box>
+            {!!node.todos?.length && <TodoList todos={node.todos} animated={kind === 'running'} />}
+            {node.usage && (
+              <Text>
+                <Text color={PALETTE.muted}>{ICONS.download} {formatTokens(node.usage.input + node.usage.cacheRead + node.usage.cacheWrite)}  {ICONS.upload} {formatTokens(node.usage.output)}  {ICONS.requests} {node.usage.steps}</Text>
+                {isLive(node.status) && !!node.progress?.total && <Text color={PALETTE.muted}>  étape {barLine(node.progress).label}</Text>}
+              </Text>
+            )}
+          </Box>
+        </Box>
+      </Box>
+    )
+  }
+
+  const AgentCard = ({ node, depth, ancestorsLast = [], route, onOpen, onDismiss }: { node: Node; depth: number; last: boolean; ancestorsLast?: boolean[]; route?: string; onOpen: (id: string) => void; onDismiss: (id: string) => void }) => {
+    const lines = cardHeight(node)
     return (
       <Box>
         {gutterMarks(depth, ancestorsLast).map(mark => (
@@ -105,55 +183,7 @@ export const makePanel = ({ Box, Text, Button }: Ui) => {
             <Text color={PALETTE.muted}>{Array.from({ length: lines }, () => mark).join('\n')}</Text>
           </Box>
         ))}
-        <Box flexGrow={1} flexDirection="column" backgroundColor={done ? doneTint(node.usage?.model ?? node.model ?? '') : PALETTE.card} marginBottom={compact ? 0 : CARD_MARGIN_BOTTOM} paddingX={CARD_PADDING_X} paddingY={compact ? 0 : CARD_PADDING_Y} overflow="hidden">
-          <Box alignItems="center">
-            {!compact && <Sprite node={node} />}
-            <Box flexDirection="column" flexGrow={1}>
-              <Box justifyContent="space-between" flexWrap="wrap" columnGap={2}>
-                <Text>
-                  {depth > 0 && <Text color={PALETTE.muted}>{last ? CONNECTOR_LAST : CONNECTOR_MIDDLE}</Text>}
-                  <Text bold color={PALETTE.text}>{node.label}</Text>{'  '}
-                  <Text bold backgroundColor={status.background} color={status.color}>{` ${status.label} `}</Text>
-                  {node.elapsed !== undefined && <Text color={PALETTE.muted}>  {done ? 'en ' : ''}{formatDuration(node.elapsed)}</Text>}
-                </Text>
-                {node.usage && <Text color={PALETTE.muted}>{shortModel(node.usage.model)}{route && ` · ${route}`}  {formatCost(node.usage.cost)}</Text>}
-              </Box>
-              {node.launchedBy && <Text color={PALETTE.muted}>lancé par {node.launchedBy}</Text>}
-              <Box marginY={compact ? 0 : GOAL_MARGIN_Y}>
-                <Text bold color={PALETTE.text}>{done ? ICONS.done : ICONS.goal} {node.goal ?? NO_GOAL_PLACEHOLDER}</Text>
-              </Box>
-              {!compact && !!node.segments?.length && (
-                <Box flexDirection="column">
-                  <Box columnGap={1}>
-                    {node.segments.map(done => (
-                      <Box flexGrow={1} width={0} height={1} overflow="hidden">
-                        <Text color={done ? PALETTE.green : PALETTE.yellow}>{SEGMENT_GLYPH.repeat(SEGMENT_GLYPH_CELLS)}</Text>
-                      </Box>
-                    ))}
-                  </Box>
-                  <Text color={PALETTE.muted}>{node.progress?.done}/{node.progress?.total}  terminés</Text>
-                </Box>
-              )}
-              {!compact && !!node.todos?.length && <TodoList todos={node.todos} animated={kind === 'running'} />}
-              <Box justifyContent="space-between" alignItems="center">
-                <Box>
-                  {node.usage && (
-                    <Text>
-                      <Text color={PALETTE.muted}>{ICONS.download} {formatTokens(node.usage.input + node.usage.cacheRead + node.usage.cacheWrite)}  {ICONS.upload} {formatTokens(node.usage.output)}  {ICONS.requests} {node.usage.steps}</Text>
-                      {isLive(node.status) && !!node.progress?.total && <Text color={PALETTE.muted}>  étape {barLine(node.progress).label}</Text>}
-                    </Text>
-                  )}
-                </Box>
-                {node.id !== MAIN && (
-                  <Box columnGap={ACTION_GAP}>
-                    {!node.segments && <ActionButton id={`open:${node.id}`} label="ouvrir ▸" background={PALETTE.rule} onPress={() => onOpen(node.id)} />}
-                    {!isLive(node.status) && <ActionButton id={`dismiss:${node.id}`} label={`retirer ${ICONS.failed}`} background={PALETTE.badgeRed} onPress={() => onDismiss(node.id)} />}
-                  </Box>
-                )}
-              </Box>
-            </Box>
-          </Box>
-        </Box>
+        {node.id === MAIN ? <MainCard node={node} route={route} /> : <CompactCard node={node} route={route} onOpen={onOpen} onDismiss={onDismiss} />}
       </Box>
     )
   }

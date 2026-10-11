@@ -105,17 +105,13 @@ const parentIndexes = (rows: readonly Row[]) => {
     return parent
   })
 }
-const totalHeight = (rows: readonly Row[], compact: boolean) => rows.reduce((sum, { node }) => sum + cardHeight(node, compact), 0)
-export const needsCompact = (rows: readonly Row[], maxRows: number) => totalHeight(rows, false) > maxRows
-
 export function visibleAgents<T extends Row>(nodes: readonly T[], maxRows: number): { shown: T[]; hidden: number } {
-  const compact = needsCompact(nodes, maxRows)
   const parents = parentIndexes(nodes)
   const kept = new Set<number>()
   let used = 0
   const heightAt = (index: number) => {
     const row = nodes[index]
-    return row ? cardHeight(row.node, compact) : 0
+    return row ? cardHeight(row.node) : 0
   }
   const keep = (index: number) => {
     for (let i = index; i >= 0 && !kept.has(i); i = parents[i] ?? -1) {
