@@ -4,7 +4,7 @@ export type SynthesizedSkill = { description: string; steps: string[] }
 
 export const SYNTHESIS_TIMEOUT_SECONDS = 150
 export const SYNTHESIS_MODEL = 'haiku'
-const LIGHT_CLI_FLAGS = ['--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '--setting-sources', '']
+const LIGHT_CLI_FLAGS = ['--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '--setting-sources', '', '--system-prompt', 'Reply tersely.']
 const TIMEOUT_MESSAGE = 'timeout'
 const TIMEOUT_REASON = `délai de ${SYNTHESIS_TIMEOUT_SECONDS} s dépassé`
 const INVALID_REPLY_REASON = 'réponse de synthèse invalide'
