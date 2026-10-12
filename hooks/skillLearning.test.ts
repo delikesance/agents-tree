@@ -244,3 +244,12 @@ test('discover apply retries candidates whose earlier writing failed', async () 
   await new Promise(resolve => setTimeout(resolve, 20))
   expect((await h.learning.ledger(h.deps))['edit-the-source-module']?.status).toBe('active')
 })
+
+test('discover lists the skills learned from tasks and apply writes them', async () => {
+  const h = harness()
+  const slug = await failedCandidate(h)
+  expect(await h.learning.discover(h.deps, false)).toMatch(new RegExp(`^⏳ ${slug} — `))
+  await h.learning.discover(h.deps, true)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
+})
