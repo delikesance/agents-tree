@@ -2,8 +2,8 @@ import { tokenize } from './knowledge'
 import { jaccard } from './skillLedger'
 import type { SkillLedger } from './skillTypes'
 
-export type DiscoveryCandidate = { slug: string; title: string; steps: string[]; files: string[]; commands: string[] }
-export type Criterion = 'multi-step' | 'grounded' | 'verifiable' | 'new' | 'not-in-context'
+export type DiscoveryCandidate = { slug: string; title: string; steps: string[]; files: string[] }
+export type Criterion = 'multi-step' | 'grounded' | 'new' | 'not-in-context'
 export type Verdict = { candidate: DiscoveryCandidate; failed: Criterion[]; covered: number }
 
 const MIN_STEPS = 3
@@ -11,7 +11,6 @@ const MAX_SLUG_CHARS = 40
 const MAX_OVERLAP = 0.4
 export const CONTEXT_OVERLAP = 0.7
 const SHINGLE_SIZE = 3
-const RUNNERS = ['bun', 'npm', 'pnpm', 'yarn', 'make', 'python3', 'git', 'cargo', 'go', 'pytest', 'tsc']
 const HEADING = /^#{1,3}\s+(.+)/
 const ITEM = /^\s*(?:[-*]|\d+\.)\s+(.+)/
 const CODE_SPAN = /`([^`]+)`/g
@@ -27,10 +26,6 @@ const slugOf = (title: string) =>
 
 const spansOf = (text: string) => [...text.matchAll(CODE_SPAN)].map(match => match[1] ?? '')
 
-const isCommand = (span: string) => span.includes(' ') && RUNNERS.includes(span.split(' ')[0] ?? '')
-
-export const commandsIn = (text: string) => spansOf(text).filter(isCommand)
-
 export const pathsIn = (steps: string[]) => [...new Set(steps.flatMap(spansOf).filter(span => PATH_LIKE.test(span)))]
 
 export const candidateOf = (title: string, steps: string[]): DiscoveryCandidate => ({
@@ -38,7 +33,6 @@ export const candidateOf = (title: string, steps: string[]): DiscoveryCandidate 
   title,
   steps,
   files: pathsIn(steps),
-  commands: steps.flatMap(spansOf).filter(isCommand),
 })
 
 export function markdownCandidates(text: string): DiscoveryCandidate[] {
@@ -70,7 +64,6 @@ const coveredSteps = (candidate: DiscoveryCandidate, context: string[]) => {
 const criteria: Record<Criterion, (candidate: DiscoveryCandidate, ledger: SkillLedger, covered: number) => boolean> = {
   'multi-step': candidate => candidate.steps.length >= MIN_STEPS,
   grounded: candidate => candidate.files.length > 0,
-  verifiable: candidate => candidate.commands.length > 0,
   new: (candidate, ledger) => {
     const tokens = tokenize(candidate.title)
     return !ledger[candidate.slug] && Object.values(ledger).every(record => jaccard(record.tags, tokens) < MAX_OVERLAP)

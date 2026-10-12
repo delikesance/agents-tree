@@ -22,29 +22,28 @@ const proposalPrompt = (digest: string, context: string[]) =>
     '</digest>',
   ].join('\n')
 
-const toCandidates = (skill: unknown, verifyCommand?: string): DiscoveryCandidate[] => {
+const toCandidates = (skill: unknown): DiscoveryCandidate[] => {
   const { title, steps } = (skill ?? {}) as { title?: unknown; steps?: unknown }
   if (typeof title !== 'string' || !Array.isArray(steps)) return []
   const cleanSteps = steps.filter((step): step is string => typeof step === 'string' && step.trim() !== '').map(step => clip(step.trim()))
   if (!title.trim() || cleanSteps.length < MIN_STEPS || cleanSteps.length > MAX_STEPS) return []
-  const candidate = candidateOf(clip(title.trim()), cleanSteps)
-  return [candidate.commands.length || !verifyCommand ? candidate : candidateOf(candidate.title, [...cleanSteps, `Vérifier avec \`${verifyCommand}\``])]
+  return [candidateOf(clip(title.trim()), cleanSteps)]
 }
 
-const parseProposals = (output: string, verifyCommand?: string): DiscoveryCandidate[] => {
+const parseProposals = (output: string): DiscoveryCandidate[] => {
   const json = output.match(/\{[\s\S]*\}/)?.[0]
   if (!json) return []
   try {
     const { skills } = JSON.parse(json)
-    return Array.isArray(skills) ? skills.slice(0, MAX_SKILLS).flatMap(skill => toCandidates(skill, verifyCommand)) : []
+    return Array.isArray(skills) ? skills.slice(0, MAX_SKILLS).flatMap(toCandidates) : []
   } catch {
     return []
   }
 }
 
-export async function proposeCandidates(fs: SkillFs, digest: string, context: string[], verifyCommand?: string): Promise<DiscoveryCandidate[]> {
+export async function proposeCandidates(fs: SkillFs, digest: string, context: string[]): Promise<DiscoveryCandidate[]> {
   try {
-    return parseProposals(await askModel(fs, proposalPrompt(digest, context)), verifyCommand)
+    return parseProposals(await askModel(fs, proposalPrompt(digest, context)))
   } catch {
     return []
   }
