@@ -84,6 +84,11 @@ test('readyToPromote needs candidate, enough sessions and room', () => {
   expect(readyToPromote({ ...ready, status: 'rejected' }, 0)).toBe(false)
 })
 
+test('readyToPromote needs a single session when a task was completed', () => {
+  const { ledger, slug } = groupSignal({}, { ...signal('s1', NOTE), kind: 'task' })
+  expect(readyToPromote(ledger[slug], 0)).toBe(true)
+})
+
 test('remove drops only the given record, unknown slug is a no-op', () => {
   const first = groupSignal({}, signal('s1', NOTE))
   const second = groupSignal(first.ledger, signal('s2', 'unrelated refactor of the billing module'))
