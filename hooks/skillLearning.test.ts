@@ -194,3 +194,11 @@ test('discovery mines only README.md, never the CLAUDE.md that is already in con
   h.files['/p/README.md'] = section
   expect(await h.learning.discover(h.deps, false)).toBe('✘ tests — déjà dans le contexte permanent (3/3 étapes)')
 })
+
+test('a grounded and verifiable model proposal becomes a ✔ verdict', async () => {
+  const h = harness()
+  const proposal = JSON.stringify([{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Verify with `bun test hooks/`'] }])
+  const run = h.deps.fs.run
+  h.deps.fs.run = async command => (command.includes('claude') ? proposal : run(command))
+  expect(await h.learning.discover(h.deps, false)).toBe('✔ edit-the-source-module')
+})
