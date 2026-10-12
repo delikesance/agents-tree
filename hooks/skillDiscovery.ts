@@ -29,9 +29,11 @@ const spansOf = (text: string) => [...text.matchAll(CODE_SPAN)].map(match => mat
 
 const isCommand = (span: string) => span.includes(' ') && RUNNERS.includes(span.split(' ')[0] ?? '')
 
+export const commandsIn = (text: string) => spansOf(text).filter(isCommand)
+
 export const pathsIn = (steps: string[]) => [...new Set(steps.flatMap(spansOf).filter(span => PATH_LIKE.test(span)))]
 
-const candidateOf = (title: string, steps: string[]): DiscoveryCandidate => ({
+export const candidateOf = (title: string, steps: string[]): DiscoveryCandidate => ({
   slug: slugOf(title),
   title,
   steps,

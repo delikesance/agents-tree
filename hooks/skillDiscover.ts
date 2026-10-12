@@ -1,5 +1,6 @@
 import type { SkillDeps } from './skillHost'
 import { judge, markdownCandidates, type DiscoveryCandidate, type Verdict } from './skillDiscovery'
+import { minedCandidates, readHistory, testCommandsIn } from './skillMined'
 import { isLive } from './skillMaintenance'
 import { promotionPatch } from './skillPromotion'
 import { MAX_ACTIVE_SKILLS, type SkillLedger, type SkillRecord } from './skillTypes'
@@ -18,7 +19,9 @@ const readAll = (deps: SkillDeps, cwd: string, sources: string[]) =>
 export async function discoverVerdicts(deps: SkillDeps, cwd: string, ledger: SkillLedger): Promise<Verdict[]> {
   const texts = await readAll(deps, cwd, SOURCES)
   const context = (await readAll(deps, cwd, PERMANENT_CONTEXT)).filter((text): text is string => !!text)
-  const candidates = await Promise.all(texts.flatMap(text => (text ? markdownCandidates(text) : [])).map(candidate => groundedIn(deps, cwd, candidate)))
+  const mined = minedCandidates(await readHistory(deps.fs), testCommandsIn([...context, ...texts.filter((text): text is string => !!text)]))
+  const documented = texts.flatMap(text => (text ? markdownCandidates(text) : []))
+  const candidates = await Promise.all([...documented, ...mined].map(candidate => groundedIn(deps, cwd, candidate)))
   return candidates.map(candidate => judge(candidate, ledger, context))
 }
 
