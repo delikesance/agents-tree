@@ -4,7 +4,8 @@ import { buildDigest } from './skillDigest'
 import { proposeCandidates } from './skillPropose'
 import { isLive } from './skillMaintenance'
 import { promotionPatch } from './skillPromotion'
-import { MAX_ACTIVE_SKILLS, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
+import { headCommit } from './skillWriter'
+import { MAX_ACTIVE_SKILLS, SKILLS_STORE_KEY, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
 
 const SOURCES = ['README.md']
 const PERMANENT_CONTEXT = ['CLAUDE.md', 'AGENTS.md', '.claude/project-map.md']
@@ -19,12 +20,25 @@ const readAll = (deps: SkillDeps, cwd: string, sources: string[]) =>
 
 const repoRoot = (deps: SkillDeps, cwd: string) => deps.fs.run(['git', 'rev-parse', '--show-toplevel']).then(out => out.trim() || cwd).catch(() => cwd)
 
+const PROPOSALS_KEY = `${SKILLS_STORE_KEY}.proposals`
+
+type CachedProposals = { head: string; candidates: DiscoveryCandidate[] }
+
+const cachedProposals = async (deps: SkillDeps, propose: () => Promise<DiscoveryCandidate[]>) => {
+  const head = await headCommit(deps.fs)
+  const cached = (await deps.store.get(PROPOSALS_KEY)) as CachedProposals | undefined
+  if (head && cached?.head === head) return cached.candidates
+  const candidates = await propose()
+  if (head && candidates.length) await deps.store.set(PROPOSALS_KEY, { head, candidates } satisfies CachedProposals)
+  return candidates
+}
+
 export async function discoverVerdicts(deps: SkillDeps, cwdOfSession: string, ledger: SkillLedger, signals: SkillSignal[]): Promise<Verdict[]> {
   const cwd = await repoRoot(deps, cwdOfSession)
   const texts = await readAll(deps, cwd, SOURCES)
   const context = (await readAll(deps, cwd, PERMANENT_CONTEXT)).filter((text): text is string => !!text)
   const documented = texts.flatMap(text => (text ? markdownCandidates(text) : []))
-  const proposed = await proposeCandidates(deps.fs, await buildDigest(deps, cwd, signals), context)
+  const proposed = await cachedProposals(deps, async () => proposeCandidates(deps.fs, await buildDigest(deps, cwd, signals), context))
   const candidates = await Promise.all([...documented, ...proposed].map(candidate => groundedIn(deps, cwd, candidate)))
   return candidates.map(candidate => judge(candidate, ledger, context))
 }
