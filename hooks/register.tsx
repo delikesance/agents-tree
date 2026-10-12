@@ -542,7 +542,7 @@ export const register: Register = on => {
     const models = await read($, modelByAgent)
     const routes = await read($, routeSourceByAgent)
     const now = Date.now()
-    const agents = rememberAgents(await $.agent.list())
+    const agents = rememberAgents((await $.agent.list()).filter(agent => !skillAgent.owns(agent.id)))
     trackLifecycle(agents, now)
     const root = buildTree(agents, usage, activity, goals, progress, todos, models, await read($, mainFinishedAtom), now, workflowAgents(), workflowLaunches(now))
     const allRows = flatten(root)

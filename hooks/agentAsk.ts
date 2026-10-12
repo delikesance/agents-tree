@@ -14,6 +14,7 @@ export function createAgentAsk() {
       spawned.add(agentId)
       return new Promise<string>(resolve => waiting.set(agentId, resolve))
     },
+    owns: (agentId: string) => spawned.has(agentId),
     isReport: (text: string) => [...spawned].some(id => text.includes(id)) || [...answers].some(answer => text.includes(answer)),
     settle: (agentId: string, answer: string) => {
       if (spawned.has(agentId) && answer.trim()) answers.add(answer.trim())
