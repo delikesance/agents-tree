@@ -6,7 +6,7 @@ import { SKILLS_STORE_KEY } from './skillTypes'
 import { skillPath } from './skillWriter'
 
 const CWD = '/p'
-const SYNTHESIS = JSON.stringify({ description: 'Use when editing the source module', steps: ['Read the module', 'Edit it'] })
+const SYNTHESIS = JSON.stringify({ description: 'Use when editing the source module', steps: ['Read src/a.ts', 'Edit it'] })
 const SUMMARY = 'Sert à modifier le module source'
 const isSynthesis = (command: string[]) => command.at(-1)?.includes('JSON') ?? false
 
@@ -40,8 +40,7 @@ const settle = async ({ learning, deps }: Harness) => {
 
 const runTurn = async ({ learning, deps }: Harness, prompt = 'please fix the source module') => {
   await learning.onPrompt(deps, prompt)
-  await learning.onTool(deps, { tool: 'Read', file_path: '/p/src/a.ts' }, false)
-  await learning.onTool(deps, { tool: 'Grep', path: '/p/src' }, false)
+  for (let read = 0; read < 8; read++) await learning.onTool(deps, { tool: 'Read', file_path: '/p/src/a.ts' }, false)
   await learning.onTool(deps, { tool: 'Edit', file_path: '/p/src/a.ts' }, false)
   await learning.onTurnComplete(deps)
 }
@@ -57,7 +56,7 @@ const learnSkill = async (h: Harness) => {
   return Object.keys(await h.learning.ledger(h.deps))[0] as string
 }
 
-test('three sessions of the same sequence write a valid SKILL.md', async () => {
+test('three sessions of the same exploration write a valid SKILL.md', async () => {
   const h = harness()
   const slug = await learnSkill(h)
   const text = h.files[skillPath(CWD, slug)] as string
@@ -164,7 +163,7 @@ test('accept returns the failure reason when the write is refused', async () => 
   await runSession(h, 's1')
   const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
   const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command.includes('claude') ? '{"description":"Fix tests","steps":["a"]}' : run(command))
+  h.deps.fs.run = async command => (command.includes('claude') ? '{"description":"Fix tests","steps":["a src/a.ts"]}' : run(command))
   expect(await h.learning.accept(h.deps, slug)).toBe("écriture refusée : description must start with 'Use when'")
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', lastError: "écriture refusée : description must start with 'Use when'" })
 })

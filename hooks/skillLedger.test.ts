@@ -3,7 +3,7 @@ import { groupSignal, readyToPromote, reject, remove, removeInactive, restore } 
 import type { SkillLedger, SkillSignal } from './skillTypes'
 
 const signal = (sessionId: string, note: string, files: string[] = [], tools: string[] = []): SkillSignal => ({
-  kind: 'sequence',
+  kind: 'retry',
   sessionId,
   at: 1,
   files,
