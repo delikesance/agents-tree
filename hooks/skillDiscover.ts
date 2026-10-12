@@ -16,7 +16,10 @@ const groundedIn = async (deps: SkillDeps, cwd: string, candidate: DiscoveryCand
 const readAll = (deps: SkillDeps, cwd: string, sources: string[]) =>
   Promise.all(sources.map(source => deps.fs.read(`${cwd}/${source}`).catch(() => undefined)))
 
-export async function discoverVerdicts(deps: SkillDeps, cwd: string, ledger: SkillLedger): Promise<Verdict[]> {
+const repoRoot = (deps: SkillDeps, cwd: string) => deps.fs.run(['git', 'rev-parse', '--show-toplevel']).then(out => out.trim() || cwd).catch(() => cwd)
+
+export async function discoverVerdicts(deps: SkillDeps, cwdOfSession: string, ledger: SkillLedger): Promise<Verdict[]> {
+  const cwd = await repoRoot(deps, cwdOfSession)
   const texts = await readAll(deps, cwd, SOURCES)
   const context = (await readAll(deps, cwd, PERMANENT_CONTEXT)).filter((text): text is string => !!text)
   const mined = minedCandidates(await readHistory(deps.fs), testCommandsIn([...context, ...texts.filter((text): text is string => !!text)]))

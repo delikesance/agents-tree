@@ -20,7 +20,7 @@ const harness = () => {
       read: async path => files[path],
       write: async (path, text) => void (files[path] = text),
       remove: async path => void delete files[path],
-      run: async command => (command.includes('claude') ? (isSynthesis(command) ? SYNTHESIS : SUMMARY) : command[1] === 'diff' ? state.diff : 'head1\n'),
+      run: async command => (command.includes('claude') ? (isSynthesis(command) ? SYNTHESIS : SUMMARY) : command[1] === 'rev-parse' && command[2] === '--show-toplevel' ? '/p\n' : command[1] === 'diff' ? state.diff : 'head1\n'),
     },
     cwd: CWD,
     now: () => ++state.clock,
