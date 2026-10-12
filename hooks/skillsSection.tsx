@@ -5,7 +5,7 @@ import type { SkillRow } from './skillsView'
 import type { SkillLedger, SkillStatus } from './skillTypes'
 
 type Ui = Record<'Box' | 'Text' | 'Button', (props: any) => any>
-type Handlers = { onAccept: (slug: string) => void; onReject: (slug: string) => void; onRestore: (slug: string) => void; onRevalidate: (slug: string) => void; onDismiss: (slug: string) => void; onDismissInactive: () => void; isBusy: (slug: string) => boolean }
+type Handlers = { onAccept: (slug: string) => void; onReject: (slug: string) => void; onRestore: (slug: string) => void; onRevalidate: (slug: string) => void; onDismiss: (slug: string) => void; onDismissInactive: () => void; onDismissAll: () => void; isBusy: (slug: string) => boolean }
 
 const MAX_VISIBLE_ROWS = 6
 const ACTION_GAP = 2
@@ -92,11 +92,10 @@ export const makeSkillsSection = ({ Box, Text, Button }: Ui) => {
         <Text color={PALETTE.muted}>{skillsSummary(ledger)}</Text>
         {rows.slice(0, MAX_VISIBLE_ROWS).map(row => <SkillRowView row={row} {...handlers} />)}
         {hidden > 0 && <Text color={PALETTE.muted}>+{hidden} more</Text>}
-        {inactiveCount > 0 && (
-          <Box justifyContent="flex-end" marginTop={1}>
-            <ActionButton id="dismiss-all" label={`tout dégager (${inactiveCount}) ✕`} background={PALETTE.badgeRed} onPress={handlers.onDismissInactive} />
-          </Box>
-        )}
+        <Box justifyContent="flex-end" marginTop={1} columnGap={ACTION_GAP}>
+          {inactiveCount > 0 && <ActionButton id="dismiss-inactive" label={`tout dégager (${inactiveCount}) ✕`} background={PALETTE.badgeRed} onPress={handlers.onDismissInactive} />}
+          <ActionButton id="dismiss-all" label={`tout supprimer (${rows.length}) ✕`} background={PALETTE.badgeRed} onPress={handlers.onDismissAll} />
+        </Box>
       </Box>
     )
   }

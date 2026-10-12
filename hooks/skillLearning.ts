@@ -218,6 +218,11 @@ export function createSkillLearning() {
         if (record) await dropSkillFiles(deps, [record])
         return remove(ledger, slug)
       }),
+    dismissAll: (deps: SkillDeps) =>
+      mutate(deps, async ledger => {
+        await dropSkillFiles(deps, Object.values(ledger))
+        return {}
+      }),
     dismissInactive: (deps: SkillDeps) =>
       mutate(deps, async ledger => {
         await dropSkillFiles(deps, Object.values(ledger).filter(isInactive))

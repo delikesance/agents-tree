@@ -253,3 +253,11 @@ test('discover lists the skills learned from tasks and apply writes them', async
   await new Promise(resolve => setTimeout(resolve, 20))
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
 })
+
+test('dismissAll deletes every skill file and empties the ledger', async () => {
+  const h = harness()
+  const slug = await learnSkill(h)
+  await h.learning.dismissAll(h.deps)
+  expect(await h.learning.ledger(h.deps)).toEqual({})
+  expect(h.files[skillPath(CWD, slug)]).toBeUndefined()
+})
