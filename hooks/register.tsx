@@ -472,6 +472,8 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('session.receive', async ($, e, next) => (skillAgent.isReport(e.text) ? { consumed: 'skill drafting report' } : next(e)))
+
   on('skill.prompt', async ($, e, next) => {
     void learning.onSkillPrompt(skillsOf($), e.skill)
     return next(e)

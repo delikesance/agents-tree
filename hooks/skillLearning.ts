@@ -89,11 +89,12 @@ export function createSkillLearning() {
     records.forEach(record => promoting.add(record.slug))
     await mutate(deps, ledger => records.reduce((current, record) => ({ ...current, [record.slug]: record }), ledger))
     notify()
-    let written = 0
-    for (const record of records) {
-      written += (await promote(deps, cwd, record)).ok ? 1 : 0
+    const outcomes = await Promise.all(records.map(async record => {
+      const outcome = await promote(deps, cwd, record)
       notify()
-    }
+      return outcome
+    }))
+    const written = outcomes.filter(outcome => outcome.ok).length
     notify(`${written}/${records.length} skills rédigés${written < records.length ? ' — échecs détaillés dans le panneau' : ''}`)
   }
 
