@@ -15,6 +15,7 @@ export type SkillHostSource = {
   fs: { read: (path: string) => Promise<string>; write: (path: string, text: string) => Promise<void>; exists: (path: string) => Promise<boolean> }
   process: { run: (argv: string[], init: { cwd?: string; timeoutMs: number }) => Promise<{ exitCode: number; stdout: string }> }
   session: { id: () => Promise<string> }
+  agent: { ask: (prompt: string) => Promise<string> }
 }
 
 const directoryOf = (path: string) => path.slice(0, path.lastIndexOf('/'))
@@ -33,6 +34,7 @@ const skillFsOf = (host: SkillHostSource, cwd?: string): SkillFs => {
       await run(['rmdir', directoryOf(path)]).catch(() => undefined)
     },
     run,
+    ask: prompt => host.agent.ask(prompt),
   }
 }
 
