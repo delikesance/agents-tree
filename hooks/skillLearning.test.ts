@@ -202,3 +202,14 @@ test('a grounded model proposal becomes a ✔ verdict', async () => {
   h.deps.fs.run = async command => (command.includes('claude') ? proposal : run(command))
   expect(await h.learning.discover(h.deps, false)).toBe('✔ edit-the-source-module')
 })
+
+test('model proposals are cached per commit, so a second discover does not call the model again', async () => {
+  const h = harness()
+  const proposal = JSON.stringify({ skills: [{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Check `src/a.ts`'] }] })
+  let calls = 0
+  const run = h.deps.fs.run
+  h.deps.fs.run = async command => (command.includes('claude') ? (calls++, proposal) : run(command))
+  const first = await h.learning.discover(h.deps, false)
+  expect(await h.learning.discover(h.deps, false)).toBe(first)
+  expect(calls).toBe(1)
+})
