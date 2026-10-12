@@ -226,3 +226,20 @@ test('discover apply shows candidates at once, then reports how many skills were
   expect(messages.at(-1)).toBe('1/1 skills rédigés')
   expect((await h.learning.ledger(h.deps))['edit-the-source-module']?.status).toBe('active')
 })
+
+test('discover apply retries candidates whose earlier writing failed', async () => {
+  const h = harness()
+  const proposal = JSON.stringify({ skills: [{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Check `src/a.ts`'] }] })
+  h.files['/p/src/a.ts'] = ''
+  const run = h.deps.fs.run
+  const modelReply = (synthesis: string) => async (command: string[]) =>
+    command.includes('claude') ? (command.at(-1)?.includes('NON-OBVIOUS') ? proposal : synthesis) : run(command)
+  h.deps.fs.run = modelReply('{"description":"Fix tests","steps":["a src/a.ts"]}')
+  await h.learning.discover(h.deps, true)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect((await h.learning.ledger(h.deps))['edit-the-source-module']?.status).toBe('candidate')
+  h.deps.fs.run = modelReply(SYNTHESIS)
+  await h.learning.discover(h.deps, true)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect((await h.learning.ledger(h.deps))['edit-the-source-module']?.status).toBe('active')
+})
