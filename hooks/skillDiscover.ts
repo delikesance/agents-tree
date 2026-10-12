@@ -1,9 +1,10 @@
 import type { SkillDeps } from './skillHost'
 import { judge, markdownCandidates, type DiscoveryCandidate, type Verdict } from './skillDiscovery'
-import { minedCandidates, readHistory, testCommandsIn } from './skillMined'
+import { buildDigest } from './skillDigest'
+import { proposeCandidates } from './skillPropose'
 import { isLive } from './skillMaintenance'
 import { promotionPatch } from './skillPromotion'
-import { MAX_ACTIVE_SKILLS, type SkillLedger, type SkillRecord } from './skillTypes'
+import { MAX_ACTIVE_SKILLS, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
 
 const SOURCES = ['README.md']
 const PERMANENT_CONTEXT = ['CLAUDE.md', 'AGENTS.md', '.claude/project-map.md']
@@ -18,13 +19,13 @@ const readAll = (deps: SkillDeps, cwd: string, sources: string[]) =>
 
 const repoRoot = (deps: SkillDeps, cwd: string) => deps.fs.run(['git', 'rev-parse', '--show-toplevel']).then(out => out.trim() || cwd).catch(() => cwd)
 
-export async function discoverVerdicts(deps: SkillDeps, cwdOfSession: string, ledger: SkillLedger): Promise<Verdict[]> {
+export async function discoverVerdicts(deps: SkillDeps, cwdOfSession: string, ledger: SkillLedger, signals: SkillSignal[]): Promise<Verdict[]> {
   const cwd = await repoRoot(deps, cwdOfSession)
   const texts = await readAll(deps, cwd, SOURCES)
   const context = (await readAll(deps, cwd, PERMANENT_CONTEXT)).filter((text): text is string => !!text)
-  const mined = minedCandidates(await readHistory(deps.fs), testCommandsIn([...context, ...texts.filter((text): text is string => !!text)]))
   const documented = texts.flatMap(text => (text ? markdownCandidates(text) : []))
-  const candidates = await Promise.all([...documented, ...mined].map(candidate => groundedIn(deps, cwd, candidate)))
+  const proposed = await proposeCandidates(deps.fs, await buildDigest(deps, cwd, signals), context)
+  const candidates = await Promise.all([...documented, ...proposed].map(candidate => groundedIn(deps, cwd, candidate)))
   return candidates.map(candidate => judge(candidate, ledger, context))
 }
 
