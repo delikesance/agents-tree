@@ -4,6 +4,8 @@ import type { CoreEngineInterface, Register, StateDollar } from 'claude-code'
 import type { AgentUsage, GoalProgress } from '../types'
 
 import { PROGRESS_SECTION, PROGRESS_TOOL } from './progress'
+import { TASK_TOOLS } from './taskTools'
+import { serveTaskCall, taskEditDeny, taskSections, taskStopRefusal } from './taskServe'
 import type { Todo } from './activity'
 import { TASK_STATUS_DONE, countTask, describeCall, hasUnfinished, hasUnfinishedTodos, stepsToTodos, todoProgress, toTodos } from './activity'
 import { BREAKER_DENY, BREAKER_FAILURES, RETRY_OR_STOP, evictOldest, recordFailure, recordSuccess, resetBreaker, startCall, stopped } from './breaker'
@@ -328,6 +330,7 @@ export const register: Register = on => {
     await $.tool.register(REMEMBER_TOOL)
     await $.tool.register(RECALL_TOOL)
     await $.tool.register(PROGRESS_TOOL)
+    for (const tool of TASK_TOOLS) await $.tool.register(tool)
     return next(e)
   })
 
@@ -367,6 +370,7 @@ export const register: Register = on => {
     if (e.tool === `${TOOL_PREFIX}remember`) return serveRemember($, e as ServedCall)
     if (e.tool === `${TOOL_PREFIX}recall`) return serveRecall($, e as ServedCall)
     if (e.tool === `${TOOL_PREFIX}progress`) return serveProgress($, e as ServedCall)
+    if (e.tool.startsWith(`${TOOL_PREFIX}task_`) && projectDir.cwd) return serveTaskCall($, projectDir.cwd, e as ServedCall, TOOL_PREFIX)
     const key = `${agent}:${e.tool}:${activity}`
     startCall()
     if (stopped.has(key)) return { deny: BREAKER_DENY }
@@ -376,6 +380,8 @@ export const register: Register = on => {
       if (deny) return { deny }
     }
     if (WRITING_TOOLS.includes(e.tool) && !e.agentId) {
+      const taskDeny = await taskEditDeny(projectDir.cwd, e as Record<string, unknown>)
+      if (taskDeny) return taskDeny
       const deny = await learning.gate(skillsOf($), e as Record<string, unknown>).catch(() => undefined)
       if (deny) return { deny }
     }
@@ -409,8 +415,10 @@ export const register: Register = on => {
 
   on('prompt.compose', async ($, e, next) => {
     const { sections } = await next(e)
-    return { sections: [...sections, KNOWLEDGE_SECTION, PROGRESS_SECTION] }
+    return { sections: [...sections, KNOWLEDGE_SECTION, PROGRESS_SECTION, ...(await taskSections(projectDir.cwd))] }
   })
+
+  on('classic.Stop', async ($, e, next) => (e.agent_id ? next(e) : (await taskStopRefusal(projectDir.cwd)) ?? next(e)))
 
   on('session.compact', async ($, e, next) => {
     forgetReads()
