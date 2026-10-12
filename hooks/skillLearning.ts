@@ -16,7 +16,10 @@ import { headCommit, removeSkill } from './skillWriter'
 const MAX_PROMOTE_ATTEMPTS = 3
 const SESSION_STORE_KEY = `${SKILLS_STORE_KEY}.session`
 const NO_PROJECT = 'Aucun projet ouvert.'
+const WRITING_NOTE = 'Rédaction des skills en arrière-plan.'
 const ALREADY_PROMOTING = 'Rédaction déjà en cours pour ce skill.'
+
+const pendingLines = (records: SkillRecord[]) => records.map(record => `⏳ ${record.slug} — ${record.lastError ?? record.summary ?? 'tâche enregistrée'}`).join('\n')
 
 const patchRecord = (ledger: SkillLedger, slug: string, patch: Partial<SkillRecord>): SkillLedger =>
   ledger[slug] ? { ...ledger, [slug]: { ...ledger[slug], ...patch } } : ledger
@@ -82,10 +85,7 @@ export function createSkillLearning() {
     if (summary) await mutate(deps, ledger => patchRecord(ledger, record.slug, { summary }))
   }
 
-  const adopt = async (deps: SkillDeps, cwd: string, verdicts: Verdict[], notify: (message?: string) => void) => {
-    const ledger = await load(deps)
-    const failed = Object.values(ledger).filter(record => record.status === 'candidate' && record.lastError && !promoting.has(record.slug))
-    const records = [...newRecordsOf(ledger, verdicts, deps.now()), ...failed]
+  const adopt = async (deps: SkillDeps, cwd: string, records: SkillRecord[], notify: (message?: string) => void) => {
     records.forEach(record => promoting.add(record.slug))
     await mutate(deps, ledger => records.reduce((current, record) => ({ ...current, [record.slug]: record }), ledger))
     notify()
@@ -183,10 +183,15 @@ export function createSkillLearning() {
       const { cwd } = deps
       if (!cwd) return NO_PROJECT
       const ledger = await load(deps)
+      const pending = Object.values(ledger).filter(record => record.status === 'candidate' && !promoting.has(record.slug))
+      if (pending.length) {
+        if (apply) void adopt(deps, cwd, pending, notify)
+        return [pendingLines(pending), apply ? WRITING_NOTE : ''].filter(Boolean).join('\n')
+      }
       const verdicts = await discoverVerdicts(deps, cwd, ledger, Object.values(ledger).flatMap(record => record.signals))
-      if (apply) void adopt(deps, cwd, verdicts, notify)
+      if (apply) void adopt(deps, cwd, newRecordsOf(ledger, verdicts, deps.now()), notify)
       if (!verdicts.length) return 'Aucun candidat dans README.md ni dans l\'historique git.'
-      return apply ? `${verdictLines(verdicts)}\nRédaction des skills ✔ en arrière-plan.` : verdictLines(verdicts)
+      return apply ? `${verdictLines(verdicts)}\n${WRITING_NOTE}` : verdictLines(verdicts)
     },
     reject: (deps: SkillDeps, slug: string) =>
       mutate(deps, async ledger => {
