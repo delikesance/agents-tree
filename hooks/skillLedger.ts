@@ -62,8 +62,10 @@ export const groupSignal = (ledger: SkillLedger, signal: SkillSignal) => {
   return { ledger: { ...ledger, [slug]: candidate(slug, tags, signal) }, slug }
 }
 
+const hasCompletedTask = (record: SkillRecord) => record.signals.some(signal => signal.kind === 'task')
+
 export const readyToPromote = (record: SkillRecord, activeCount: number) =>
-  record.status === 'candidate' && new Set(record.sessions).size >= PROMOTE_MIN_SESSIONS && activeCount < MAX_ACTIVE_SKILLS
+  record.status === 'candidate' && (hasCompletedTask(record) || new Set(record.sessions).size >= PROMOTE_MIN_SESSIONS) && activeCount < MAX_ACTIVE_SKILLS
 
 const setStatus = (ledger: SkillLedger, slug: string, status: SkillRecord['status']) =>
   ledger[slug] ? { ...ledger, [slug]: { ...ledger[slug], status } } : ledger

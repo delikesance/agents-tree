@@ -7,8 +7,7 @@ const MAX_TURN_EVENTS = 200
 const MAX_SIGNAL_FILES = 12
 const NOTE_CHARS = 160
 const MIN_RETRY_FAILURES = 2
-const MIN_EXPLORATION_READS = 8
-const READ_TOOLS = new Set(['Read', 'Grep', 'Glob'])
+const MIN_TASK_CALLS = 5
 const EDIT_TOOLS = new Set(['Edit', 'Write'])
 const CORRECTION_CUES =
   /(?<![\p{L}])(non|pas [çc]a|plutôt|instead|actually|wrong|revert|undo|ne fais pas)(?![\p{L}])/iu
@@ -17,11 +16,11 @@ type SessionState = {
   turn: ToolEvent[]
   failedTool?: string
   failures: number
-  explored: boolean
+  task?: string
   turnEnded: boolean
 }
 
-const freshState = (): SessionState => ({ turn: [], failures: 0, explored: false, turnEnded: false })
+const freshState = (): SessionState => ({ turn: [], failures: 0, turnEnded: false })
 
 const unique = <T>(items: T[]) => [...new Set(items)]
 
@@ -50,14 +49,6 @@ function retrySignal(state: SessionState, event: ToolEvent): SkillSignal[] {
   return [signal('retry', [event], event.at, `${event.tool} failed ${failures} times then succeeded`, event.sessionId)]
 }
 
-function explorationSignal(state: SessionState, event: ToolEvent): SkillSignal[] {
-  if (state.explored || !isSuccessfulEdit(event)) return []
-  state.explored = true
-  const reads = state.turn.filter((call) => READ_TOOLS.has(call.tool))
-  if (reads.length < MIN_EXPLORATION_READS) return []
-  return [signal('exploration', reads, event.at, `${reads.length} reads before first edit`, event.sessionId)]
-}
-
 function correctionSignal(state: SessionState, event: Extract<SkillEvent, { type: 'prompt' }>): SkillSignal[] {
   const afterTurn = state.turnEnded
   state.turnEnded = false
@@ -69,14 +60,27 @@ function onTool(state: SessionState, event: ToolEvent): SkillSignal[] {
   state.turnEnded = false
   if (state.turn.length >= MAX_TURN_EVENTS) state.turn.shift()
   state.turn.push(event)
-  return [...retrySignal(state, event), ...explorationSignal(state, event)]
+  return retrySignal(state, event)
 }
 
-function onTurnEnd(state: SessionState): SkillSignal[] {
+function taskSignal(state: SessionState, corrected: boolean): SkillSignal[] {
+  const last = state.turn.at(-1)
+  if (corrected || !state.task || !last || state.turn.length < MIN_TASK_CALLS || !state.turn.some(isSuccessfulEdit)) return []
+  return [signal('task', state.turn, last.at, state.task, last.sessionId)]
+}
+
+function onTurnEnd(state: SessionState, corrected: boolean): SkillSignal[] {
+  const signals = taskSignal(state, corrected)
+  state.task = undefined
   state.turn = []
-  state.explored = false
   state.turnEnded = true
-  return []
+  return signals
+}
+
+function onPrompt(state: SessionState, event: Extract<SkillEvent, { type: 'prompt' }>): SkillSignal[] {
+  const signals = correctionSignal(state, event)
+  if (!signals.length && !event.text.startsWith('/')) state.task = event.text.slice(0, NOTE_CHARS)
+  return signals
 }
 
 export function createSignalDetector() {
@@ -95,8 +99,8 @@ export function createSignalDetector() {
     push(event: SkillEvent): SkillSignal[] {
       const state = stateFor(event.sessionId)
       if (event.type === 'tool') return onTool(state, event)
-      if (event.type === 'turn-end') return onTurnEnd(state)
-      if (event.type === 'prompt') return correctionSignal(state, event)
+      if (event.type === 'turn-end') return onTurnEnd(state, event.corrected)
+      if (event.type === 'prompt') return onPrompt(state, event)
       return []
     },
     endSession(sessionId: string) {

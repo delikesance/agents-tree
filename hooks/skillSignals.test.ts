@@ -42,20 +42,9 @@ test('retry: single failure, mixed tools, or no recovery emit nothing', () => {
   expect(kinds([tool('Bash', [], true), tool('Bash', [], true)])).toEqual([])
 })
 
-test('exploration: eight reads before first edit', () => {
-  const reads = Array.from({ length: 8 }, (_, index) => tool('Read', [`f${index}.ts`]))
-  expect(kinds([...reads, tool('Edit', ['f0.ts'])])).toContain('exploration')
-})
-
-test('exploration: seven reads or reads after the edit emit nothing', () => {
-  const reads = (count: number) => Array.from({ length: count }, () => tool('Grep'))
-  expect(kinds([...reads(7), tool('Write')])).not.toContain('exploration')
-  expect(kinds([tool('Edit'), ...reads(9), tool('Edit')])).not.toContain('exploration')
-})
-
 test('signal files are deduped and capped at 12', () => {
   const many = Array.from({ length: 20 }, (_, index) => tool('Read', [`d/f${index}.ts`, 'd/f0.ts']))
-  const signals = feed([...many, tool('Edit', ['d/f0.ts'])])
+  const signals = feed([prompt('x'), ...many, tool('Edit', ['d/f0.ts']), turnEnd()])
   expect(signals[0].files).toHaveLength(12)
   expect(new Set(signals[0].files).size).toBe(12)
 })
@@ -76,4 +65,28 @@ test('endSession drops state', () => {
   detector.push(turnEnd())
   detector.endSession('s1')
   expect(detector.push(prompt('non'))).toEqual([])
+})
+
+test('task: a prompt then five calls with an edit emit the request at turn end', () => {
+  const calls = [tool('Read', ['a.ts']), tool('Grep'), tool('Read', ['b.ts']), tool('Bash'), tool('Edit', ['a.ts'])]
+  const signals = feed([prompt('add a settings panel'), ...calls, turnEnd()])
+  expect(signals.map(signal => signal.kind)).toEqual(['task'])
+  expect(signals[0].note).toBe('add a settings panel')
+  expect(signals[0].files).toEqual(['a.ts', 'b.ts'])
+})
+
+test('task: short, edit-less, prompt-less or corrected turns emit nothing', () => {
+  const read = tool('Read', ['a.ts'])
+  const five = [read, read, read, read, tool('Edit', ['a.ts'])]
+  expect(kinds([prompt('x'), ...five.slice(1), turnEnd()])).toEqual([])
+  expect(kinds([prompt('x'), read, read, read, read, read, turnEnd()])).toEqual([])
+  expect(kinds([...five, turnEnd()])).toEqual([])
+  expect(kinds([prompt('x'), ...five, { ...turnEnd(), corrected: true } as SkillEvent])).toEqual([])
+})
+
+test('task: one request emits once, and slash commands never replace it', () => {
+  const calls = [tool('Read', ['a.ts']), tool('Grep'), tool('Read', ['b.ts']), tool('Bash'), tool('Edit', ['a.ts'])]
+  const detector = createSignalDetector()
+  const signals = feed([prompt('add a settings panel'), prompt('/compact'), ...calls, turnEnd(), ...calls, turnEnd()], detector)
+  expect(signals.map(signal => signal.note)).toEqual(['add a settings panel'])
 })

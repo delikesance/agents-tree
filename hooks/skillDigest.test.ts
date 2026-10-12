@@ -45,7 +45,7 @@ test('recurring signals keep only corrections and retries, deduplicated', async 
   const digest = await buildDigest(
     depsWith({}),
     '/repo',
-    [signal('correction', 'use bun'), signal('retry', 'use bun'), signal('exploration', 'grep everything'), signal('retry', 'run tests twice')],
+    [signal('correction', 'use bun'), signal('retry', 'use bun'), signal('task', 'grep everything'), signal('retry', 'run tests twice')],
   )
   expect(digest.split('- use bun').length - 1).toBe(1)
   expect(digest).toContain('- run tests twice')

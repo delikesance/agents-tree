@@ -112,13 +112,14 @@ export function createSkillLearning() {
 
   const startPromotions = (deps: SkillDeps, ledger: SkillLedger) => {
     const { cwd } = deps
-    const liveCount = Object.values(ledger).filter(isLive).length
+    let liveCount = Object.values(ledger).filter(isLive).length
     for (const record of Object.values(ledger)) {
       const { slug } = record
       const exhausted = (attempts.get(slug) ?? 0) >= MAX_PROMOTE_ATTEMPTS
       if (!cwd || exhausted || promoting.has(slug) || !readyToPromote(record, liveCount)) continue
       promoting.add(slug)
       attempts.set(slug, (attempts.get(slug) ?? 0) + 1)
+      liveCount += 1
       void promote(deps, cwd, record)
     }
     return startSummaries(deps, ledger)

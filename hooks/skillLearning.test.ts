@@ -57,7 +57,16 @@ const learnSkill = async (h: Harness) => {
   return Object.keys(await h.learning.ledger(h.deps))[0] as string
 }
 
-test('three sessions of the same exploration write a valid SKILL.md', async () => {
+const failedCandidate = async (h: Harness) => {
+  const ask = h.deps.fs.ask
+  h.deps.fs.ask = async prompt => (isSynthesis(prompt) ? 'not json' : SUMMARY)
+  await runSession(h, 's1')
+  await settle(h)
+  h.deps.fs.ask = ask
+  return Object.keys(await h.learning.ledger(h.deps))[0] as string
+}
+
+test('three sessions of the same task write a valid SKILL.md', async () => {
   const h = harness()
   const slug = await learnSkill(h)
   const text = h.files[skillPath(CWD, slug)] as string
@@ -126,10 +135,17 @@ test('reject deletes the file and the same pattern never returns', async () => {
   expect(Object.keys(h.files)).toEqual(['/p/src/a.ts'])
 })
 
-test('accept promotes a candidate before the session threshold', async () => {
+test('a completed task promotes its skill in a single session', async () => {
   const h = harness()
   await runSession(h, 's1')
+  await settle(h)
   const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
+})
+
+test('accept promotes a candidate whose writing failed', async () => {
+  const h = harness()
+  const slug = await failedCandidate(h)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('candidate')
   await h.learning.accept(h.deps, slug)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
@@ -137,11 +153,8 @@ test('accept promotes a candidate before the session threshold', async () => {
 
 test('a failed synthesis keeps the candidate and retries later', async () => {
   const h = harness()
-  const ask = h.deps.fs.ask
-  h.deps.fs.ask = async () => 'not json'
-  const slug = await learnSkill(h)
+  const slug = await failedCandidate(h)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('candidate')
-  h.deps.fs.ask = ask
   await runSession(h, 's4')
   await settle(h)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
@@ -149,11 +162,8 @@ test('a failed synthesis keeps the candidate and retries later', async () => {
 
 test('a failed synthesis stores the reason on the candidate', async () => {
   const h = harness()
-  const ask = h.deps.fs.ask
-  h.deps.fs.ask = async () => 'not json'
-  const slug = await learnSkill(h)
+  const slug = await failedCandidate(h)
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', lastError: 'réponse de synthèse invalide' })
-  h.deps.fs.ask = ask
   await h.learning.accept(h.deps, slug)
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'active' })
   expect((await h.learning.ledger(h.deps))[slug]?.lastError).toBeUndefined()
@@ -161,8 +171,7 @@ test('a failed synthesis stores the reason on the candidate', async () => {
 
 test('accept returns the failure reason when the write is refused', async () => {
   const h = harness()
-  await runSession(h, 's1')
-  const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  const slug = await failedCandidate(h)
   h.deps.fs.ask = async () => '{"description":"Fix tests","steps":["a src/a.ts"]}'
   expect(await h.learning.accept(h.deps, slug)).toBe("écriture refusée : description must start with 'Use when'")
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', lastError: "écriture refusée : description must start with 'Use when'" })
@@ -170,8 +179,7 @@ test('accept returns the failure reason when the write is refused', async () => 
 
 test('accept explains a missing project and a promotion already running', async () => {
   const h = harness()
-  await runSession(h, 's1')
-  const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  const slug = await failedCandidate(h)
   expect(await h.learning.accept({ ...h.deps, cwd: undefined }, slug)).toBe('Aucun projet ouvert.')
   const pending = h.learning.accept(h.deps, slug)
   expect(await h.learning.accept(h.deps, slug)).toBe('Rédaction déjà en cours pour ce skill.')
@@ -180,9 +188,7 @@ test('accept explains a missing project and a promotion already running', async 
 
 test('a candidate gets a stored one-line summary', async () => {
   const h = harness()
-  await runSession(h, 's1')
-  await settle(h)
-  const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
+  const slug = await failedCandidate(h)
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', summary: SUMMARY })
 })
 
