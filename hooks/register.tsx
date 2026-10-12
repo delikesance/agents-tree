@@ -44,6 +44,7 @@ import { makePanel } from './panel'
 import { createAgentAsk, type AgentSpawn } from './agentAsk'
 import { skillDepsOf, type SkillHostSource } from './skillHost'
 import { createSkillLearning } from './skillLearning'
+import { withInstalledSkills } from './skillDisk'
 import { makeSkillsSection } from './skillsSection'
 import { firstPrompt, relayTarget, threadLines } from './threadLines'
 import { makeThread } from './thread'
@@ -564,7 +565,8 @@ export const register: Register = on => {
       $.ui.invalidate('ui.render')
     }
     const SkillsSection = makeSkillsSection(ui)
-    const skills = await learning.ledger(skillsOf($))
+    const skillDeps = skillsOf($)
+    const skills = await withInstalledSkills(skillDeps.fs, skillDeps.cwd, await learning.ledger(skillDeps))
     const changeSkill = (change: Promise<string | void>, redrawNow = false) => {
       if (redrawNow) setTimeout(() => $.ui.invalidate('ui.render'), 0)
       void change.then(message => {
