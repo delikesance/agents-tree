@@ -190,7 +190,7 @@ test('discovery mines only README.md, never the CLAUDE.md that is already in con
   const h = harness()
   const section = '# Tests\n- run `bun test hooks/`\n- put a shim in `node_modules/claude-code/testing.ts`\n- delete `node_modules`\n'
   h.files['/p/CLAUDE.md'] = section
-  expect(await h.learning.discover(h.deps, false)).toBe('Aucun candidat dans README.md.')
+  expect(await h.learning.discover(h.deps, false)).toBe('Aucun candidat dans README.md ni dans l\'historique git.')
   h.files['/p/README.md'] = section
   expect(await h.learning.discover(h.deps, false)).toBe('✘ tests — déjà dans le contexte permanent (3/3 étapes)')
 })
