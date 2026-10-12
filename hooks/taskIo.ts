@@ -1,25 +1,35 @@
-import { spawn } from 'node:child_process'
-import { readFile, rename, writeFile } from 'node:fs/promises'
 import type { TaskExec, TaskIo } from './taskStore'
 
-const MISSING_FILE = 'ENOENT'
-
-export const diskTaskIo: TaskIo = {
-  read: path =>
-    readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
-      if (error.code === MISSING_FILE) return undefined
-      throw error
-    }),
-  write: (path, content) => writeFile(path, content, 'utf8'),
-  rename,
+export type TaskFs = {
+  exists(path: string): Promise<boolean>
+  read(path: string): Promise<string>
+  write(path: string, text: string): Promise<void>
 }
 
-export const shellTaskExec: TaskExec = (cmd, cwd) =>
-  new Promise(resolve => {
-    const child = spawn('bash', ['-lc', cmd], { cwd })
-    let output = ''
-    child.stdout.on('data', chunk => (output += chunk))
-    child.stderr.on('data', chunk => (output += chunk))
-    child.on('error', error => resolve({ code: 1, output: error.message }))
-    child.on('close', code => resolve({ code: code ?? 1, output }))
-  })
+export type RunProcess = (argv: string[], cwd?: string) => Promise<{ exitCode: number; stdout: string; stderr: string }>
+
+export type TaskRuntime = {
+  io: TaskIo
+  exec: TaskExec
+  setStore(key: string, value: unknown): Promise<void>
+}
+
+export const hostTaskIo = (fs: TaskFs, run: RunProcess): TaskIo => ({
+  read: async path => ((await fs.exists(path)) ? fs.read(path) : undefined),
+  write: (path, content) => fs.write(path, content),
+  rename: async (from, to) => {
+    const { exitCode, stderr } = await run(['mv', from, to])
+    if (exitCode !== 0) throw new Error(stderr)
+  },
+})
+
+export const hostTaskExec =
+  (run: RunProcess): TaskExec =>
+  async (cmd, cwd) => {
+    try {
+      const { exitCode, stdout, stderr } = await run(['bash', '-lc', cmd], cwd)
+      return { code: exitCode, output: stdout + stderr }
+    } catch (error) {
+      return { code: 1, output: error instanceof Error ? error.message : String(error) }
+    }
+  }
