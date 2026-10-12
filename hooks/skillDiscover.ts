@@ -1,5 +1,5 @@
 import type { SkillDeps } from './skillHost'
-import { judge, markdownCandidates, type DiscoveryCandidate, type Verdict } from './skillDiscovery'
+import { commandsIn, judge, markdownCandidates, type DiscoveryCandidate, type Verdict } from './skillDiscovery'
 import { buildDigest } from './skillDigest'
 import { proposeCandidates } from './skillPropose'
 import { isLive } from './skillMaintenance'
@@ -24,7 +24,8 @@ export async function discoverVerdicts(deps: SkillDeps, cwdOfSession: string, le
   const texts = await readAll(deps, cwd, SOURCES)
   const context = (await readAll(deps, cwd, PERMANENT_CONTEXT)).filter((text): text is string => !!text)
   const documented = texts.flatMap(text => (text ? markdownCandidates(text) : []))
-  const proposed = await proposeCandidates(deps.fs, await buildDigest(deps, cwd, signals), context)
+  const verifyCommand = [...context, ...texts.filter((text): text is string => !!text)].flatMap(commandsIn).find(command => command.includes('test'))
+  const proposed = await proposeCandidates(deps.fs, await buildDigest(deps, cwd, signals), context, verifyCommand)
   const candidates = await Promise.all([...documented, ...proposed].map(candidate => groundedIn(deps, cwd, candidate)))
   return candidates.map(candidate => judge(candidate, ledger, context))
 }
