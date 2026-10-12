@@ -213,3 +213,16 @@ test('model proposals are cached per commit, so a second discover does not call 
   expect(await h.learning.discover(h.deps, false)).toBe(first)
   expect(calls).toBe(1)
 })
+
+test('discover apply shows candidates at once, then reports how many skills were written', async () => {
+  const h = harness()
+  const proposal = JSON.stringify({ skills: [{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Check `src/a.ts`'] }] })
+  h.files['/p/src/a.ts'] = ''
+  const run = h.deps.fs.run
+  h.deps.fs.run = async command => (command.includes('claude') ? (command.at(-1)?.includes('NON-OBVIOUS') ? proposal : SYNTHESIS) : run(command))
+  const messages: (string | undefined)[] = []
+  await h.learning.discover(h.deps, true, message => messages.push(message))
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(messages.at(-1)).toBe('1/1 skills rédigés')
+  expect((await h.learning.ledger(h.deps))['edit-the-source-module']?.status).toBe('active')
+})

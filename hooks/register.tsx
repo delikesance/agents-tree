@@ -271,6 +271,11 @@ const projectDir: { cwd?: string } = {}
 
 const learning = createSkillLearning()
 
+const notifySkills = ($: { ui: { toast: (text: string) => void; invalidate: (event: 'ui.render') => void } }) => (message?: string) => {
+  if (message) $.ui.toast(message)
+  $.ui.invalidate('ui.render')
+}
+
 const skillsOf = ($: SkillHostSource) =>
   skillDepsOf(
     {
@@ -350,7 +355,7 @@ export const register: Register = on => {
     const [subcommand, rawValue] = e.args.trim().split(/\s+/)
     if (subcommand === 'id') return { text: `Conversation ID: ${await $.session.id()}` }
     const value = rawValue?.toLowerCase()
-    if (subcommand === 'discover') return { text: await learning.discover(skillsOf($), value === 'apply') }
+    if (subcommand === 'discover') return { text: await learning.discover(skillsOf($), value === 'apply', notifySkills($)) }
     const toggle = SWITCHES.get(subcommand ?? '')
     if (toggle && (value === 'on' || value === 'off')) {
       await $.store.set(toggle.key, value === 'on')
