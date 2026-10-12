@@ -84,7 +84,9 @@ export function createSkillLearning() {
   }
 
   const adopt = async (deps: SkillDeps, cwd: string, verdicts: Verdict[], notify: (message?: string) => void) => {
-    const records = newRecordsOf(await load(deps), verdicts, deps.now())
+    const ledger = await load(deps)
+    const failed = Object.values(ledger).filter(record => record.status === 'candidate' && record.lastError && !promoting.has(record.slug))
+    const records = [...newRecordsOf(ledger, verdicts, deps.now()), ...failed]
     records.forEach(record => promoting.add(record.slug))
     await mutate(deps, ledger => records.reduce((current, record) => ({ ...current, [record.slug]: record }), ledger))
     notify()
