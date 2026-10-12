@@ -10,7 +10,7 @@ import type { Verdict } from './skillDiscovery'
 import { skillGate } from './skillGate'
 import { skillNudge } from './skillNudge'
 import { createSignalDetector } from './skillSignals'
-import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type Outcome, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
+import { SKILLS_STORE_KEY, type Outcome, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
 import { headCommit, removeSkill } from './skillWriter'
 
 const MAX_PROMOTE_ATTEMPTS = 3
@@ -41,7 +41,6 @@ export function createSkillLearning() {
   const load = async (deps: SkillDeps) => (cache ??= ((await deps.store.get(SKILLS_STORE_KEY)) as SkillLedger | undefined) ?? {})
 
   const mutate = (deps: SkillDeps, change: (ledger: SkillLedger) => SkillLedger | Promise<SkillLedger>) => {
-    if (typeof process !== 'undefined' && process.env?.[SYNTHESIS_ENV]) return queue
     queue = queue
       .then(async () => {
         const before = await load(deps)

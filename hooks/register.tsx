@@ -41,6 +41,7 @@ import { takeMapNote } from './mapEnsure'
 import { pointAtMap, startMapUpkeep } from './mapWiring'
 import type { Route } from './routing'
 import { makePanel } from './panel'
+import { createAgentAsk, type AgentSpawn } from './agentAsk'
 import { skillDepsOf, type SkillHostSource } from './skillHost'
 import { createSkillLearning } from './skillLearning'
 import { makeSkillsSection } from './skillsSection'
@@ -276,13 +277,16 @@ const notifySkills = ($: { ui: { toast: (text: string) => void; invalidate: (eve
   $.ui.invalidate('ui.render')
 }
 
-const skillsOf = ($: SkillHostSource) =>
+const skillAgent = createAgentAsk()
+
+const skillsOf = ($: Omit<SkillHostSource, 'agent'> & { agent: { spawn: AgentSpawn } }) =>
   skillDepsOf(
     {
       store: { get: key => $.store.get(key), set: (key, value) => $.store.set(key, value) },
       fs: { read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text), exists: path => $.fs.exists(path) },
       process: { run: (argv, init) => $.process.run(argv, init) },
       session: { id: () => $.session.id() },
+      agent: { ask: prompt => skillAgent.ask($.agent.spawn, prompt) },
     },
     projectDir.cwd,
   )
@@ -460,7 +464,10 @@ export const register: Register = on => {
       void update($, mainFinishedAtom, () => true)
       void learning.onTurnComplete(skillsOf($))
     }
-    if (e.agentId) finishWorkflowAgent(e.agentId, Date.now())
+    if (e.agentId) {
+      finishWorkflowAgent(e.agentId, Date.now())
+      skillAgent.settle(e.agentId, e.answer)
+    }
     void persistState($).catch(() => undefined)
     return next(e)
   })

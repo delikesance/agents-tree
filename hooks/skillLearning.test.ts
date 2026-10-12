@@ -8,7 +8,7 @@ import { skillPath } from './skillWriter'
 const CWD = '/p'
 const SYNTHESIS = JSON.stringify({ description: 'Use when editing the source module', steps: ['Read src/a.ts', 'Edit it'] })
 const SUMMARY = 'Sert à modifier le module source'
-const isSynthesis = (command: string[]) => command.at(-1)?.includes('JSON') ?? false
+const isSynthesis = (prompt: string) => prompt.includes('JSON')
 
 const harness = () => {
   const files: Record<string, string> = { '/p/src/a.ts': 'x' }
@@ -20,7 +20,8 @@ const harness = () => {
       read: async path => files[path],
       write: async (path, text) => void (files[path] = text),
       remove: async path => void delete files[path],
-      run: async command => (command.includes('claude') ? (isSynthesis(command) ? SYNTHESIS : SUMMARY) : command[1] === 'rev-parse' && command[2] === '--show-toplevel' ? '/p\n' : command[1] === 'diff' ? state.diff : 'head1\n'),
+      ask: async prompt => (isSynthesis(prompt) ? SYNTHESIS : SUMMARY),
+      run: async command => (command[1] === 'rev-parse' && command[2] === '--show-toplevel' ? '/p\n' : command[1] === 'diff' ? state.diff : 'head1\n'),
     },
     cwd: CWD,
     now: () => ++state.clock,
@@ -136,11 +137,11 @@ test('accept promotes a candidate before the session threshold', async () => {
 
 test('a failed synthesis keeps the candidate and retries later', async () => {
   const h = harness()
-  const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command.includes('claude') ? 'not json' : run(command))
+  const ask = h.deps.fs.ask
+  h.deps.fs.ask = async () => 'not json'
   const slug = await learnSkill(h)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('candidate')
-  h.deps.fs.run = run
+  h.deps.fs.ask = ask
   await runSession(h, 's4')
   await settle(h)
   expect((await h.learning.ledger(h.deps))[slug]?.status).toBe('active')
@@ -148,11 +149,11 @@ test('a failed synthesis keeps the candidate and retries later', async () => {
 
 test('a failed synthesis stores the reason on the candidate', async () => {
   const h = harness()
-  const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command.includes('claude') ? 'not json' : run(command))
+  const ask = h.deps.fs.ask
+  h.deps.fs.ask = async () => 'not json'
   const slug = await learnSkill(h)
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', lastError: 'réponse de synthèse invalide' })
-  h.deps.fs.run = run
+  h.deps.fs.ask = ask
   await h.learning.accept(h.deps, slug)
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'active' })
   expect((await h.learning.ledger(h.deps))[slug]?.lastError).toBeUndefined()
@@ -162,8 +163,7 @@ test('accept returns the failure reason when the write is refused', async () => 
   const h = harness()
   await runSession(h, 's1')
   const slug = Object.keys(await h.learning.ledger(h.deps))[0] as string
-  const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command.includes('claude') ? '{"description":"Fix tests","steps":["a src/a.ts"]}' : run(command))
+  h.deps.fs.ask = async () => '{"description":"Fix tests","steps":["a src/a.ts"]}'
   expect(await h.learning.accept(h.deps, slug)).toBe("écriture refusée : description must start with 'Use when'")
   expect((await h.learning.ledger(h.deps))[slug]).toMatchObject({ status: 'candidate', lastError: "écriture refusée : description must start with 'Use when'" })
 })
@@ -198,8 +198,7 @@ test('discovery mines only README.md, never the CLAUDE.md that is already in con
 test('a grounded model proposal becomes a ✔ verdict', async () => {
   const h = harness()
   const proposal = JSON.stringify({ skills: [{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Verify with `bun test hooks/`'] }] })
-  const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command.includes('claude') ? proposal : run(command))
+  h.deps.fs.ask = async () => proposal
   expect(await h.learning.discover(h.deps, false)).toBe('✔ edit-the-source-module')
 })
 
@@ -207,8 +206,7 @@ test('model proposals are cached per commit, so a second discover does not call 
   const h = harness()
   const proposal = JSON.stringify({ skills: [{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Check `src/a.ts`'] }] })
   let calls = 0
-  const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command.includes('claude') ? (calls++, proposal) : run(command))
+  h.deps.fs.ask = async () => (calls++, proposal)
   const first = await h.learning.discover(h.deps, false)
   expect(await h.learning.discover(h.deps, false)).toBe(first)
   expect(calls).toBe(1)
@@ -218,8 +216,7 @@ test('discover apply shows candidates at once, then reports how many skills were
   const h = harness()
   const proposal = JSON.stringify({ skills: [{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Check `src/a.ts`'] }] })
   h.files['/p/src/a.ts'] = ''
-  const run = h.deps.fs.run
-  h.deps.fs.run = async command => (command.includes('claude') ? (command.at(-1)?.includes('NON-OBVIOUS') ? proposal : SYNTHESIS) : run(command))
+  h.deps.fs.ask = async prompt => (prompt.includes('NON-OBVIOUS') ? proposal : SYNTHESIS)
   const messages: (string | undefined)[] = []
   await h.learning.discover(h.deps, true, message => messages.push(message))
   await new Promise(resolve => setTimeout(resolve, 20))
@@ -231,14 +228,12 @@ test('discover apply retries candidates whose earlier writing failed', async () 
   const h = harness()
   const proposal = JSON.stringify({ skills: [{ title: 'Edit the source module', steps: ['Read `src/a.ts`', 'Edit `src/a.ts`', 'Check `src/a.ts`'] }] })
   h.files['/p/src/a.ts'] = ''
-  const run = h.deps.fs.run
-  const modelReply = (synthesis: string) => async (command: string[]) =>
-    command.includes('claude') ? (command.at(-1)?.includes('NON-OBVIOUS') ? proposal : synthesis) : run(command)
-  h.deps.fs.run = modelReply('{"description":"Fix tests","steps":["a src/a.ts"]}')
+  const modelReply = (synthesis: string) => async (prompt: string) => (prompt.includes('NON-OBVIOUS') ? proposal : synthesis)
+  h.deps.fs.ask = modelReply('{"description":"Fix tests","steps":["a src/a.ts"]}')
   await h.learning.discover(h.deps, true)
   await new Promise(resolve => setTimeout(resolve, 20))
   expect((await h.learning.ledger(h.deps))['edit-the-source-module']?.status).toBe('candidate')
-  h.deps.fs.run = modelReply(SYNTHESIS)
+  h.deps.fs.ask = modelReply(SYNTHESIS)
   await h.learning.discover(h.deps, true)
   await new Promise(resolve => setTimeout(resolve, 20))
   expect((await h.learning.ledger(h.deps))['edit-the-source-module']?.status).toBe('active')

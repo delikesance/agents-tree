@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import { proposeCandidates } from './skillPropose'
 import type { SkillFs } from './skillTypes'
 
-const fsReturning = (run: SkillFs['run']): SkillFs => ({ read: async () => undefined, write: async () => {}, remove: async () => {}, run })
+const fsReturning = (ask: SkillFs['ask']): SkillFs => ({ read: async () => undefined, write: async () => {}, remove: async () => {}, run: async () => '', ask })
 
 const skill = {
   title: 'Run the hook tests after editing skills',

@@ -17,7 +17,7 @@ const depsWith = (files: Record<string, string>, fixes = FIXES): SkillDeps => {
   }
   return {
     store: { get: async () => undefined, set: async () => {} },
-    fs: { read: async path => files[path], write: async () => {}, remove: async () => {}, run },
+    fs: { read: async path => files[path], write: async () => {}, remove: async () => {}, run, ask: async () => '' },
     now: () => 0,
     sessionId: async () => 's',
   }
