@@ -286,7 +286,7 @@ const skillsOf = ($: Omit<SkillHostSource, 'agent'> & { agent: { spawn: AgentSpa
       fs: { read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text), exists: path => $.fs.exists(path) },
       process: { run: (argv, init) => $.process.run(argv, init) },
       session: { id: () => $.session.id() },
-      agent: { ask: prompt => skillAgent.ask($.agent.spawn, prompt) },
+      agent: { ask: prompt => skillAgent.ask(input => $.agent.spawn(input), prompt) },
     },
     projectDir.cwd,
   )
