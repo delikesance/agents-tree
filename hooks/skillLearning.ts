@@ -5,6 +5,7 @@ import { closeSession, flagStale, isLive } from './skillMaintenance'
 import { promotionPatch, type PromotionPatch } from './skillPromotion'
 import { summarizeCandidate } from './skillSummary'
 import { adoptVerdicts, discoverVerdicts, verdictLines } from './skillDiscover'
+import { skillGate } from './skillGate'
 import { skillNudge } from './skillNudge'
 import { createSignalDetector } from './skillSignals'
 import { SKILLS_STORE_KEY, SYNTHESIS_ENV, type Outcome, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
@@ -34,7 +35,7 @@ export function createSkillLearning() {
   const promoting = new Set<string>()
   const summarizing = new Set<string>()
   const summaryAttempts = new Map<string, number>()
-  const session = { id: '', turns: 0, corrected: false, used: [] as string[], awaiting: [] as string[] }
+  const session = { id: '', turns: 0, corrected: false, used: [] as string[], awaiting: [] as string[], invoked: new Set<string>(), denied: new Set<string>() }
   let cache: SkillLedger | undefined
   let queue: Promise<unknown> = Promise.resolve()
 
@@ -116,6 +117,8 @@ export function createSkillLearning() {
     session.awaiting.push(...session.used.splice(0))
     const settled = settleUses(deps, ledger, true)
     Object.assign(session, { id, turns: 0, corrected: false })
+    session.invoked.clear()
+    session.denied.clear()
     await deps.store.set(SESSION_STORE_KEY, id)
     if (!previous || previous === id) return startPromotions(deps, await flagStale(deps, settled))
     detector.endSession(previous)
@@ -131,6 +134,12 @@ export function createSkillLearning() {
     ledger: (deps: SkillDeps) => load(deps),
     isPromoting: (slug: string) => promoting.has(slug),
     nudge: async (deps: SkillDeps, text: string) => skillNudge(await load(deps), text),
+    gate: async (deps: SkillDeps, call: Record<string, unknown>) => {
+      await run(deps, ledger => ledger)
+      const verdict = deps.cwd ? skillGate(await load(deps), deps.cwd, filesOf(call), session.invoked, session.denied) : undefined
+      if (verdict) session.denied.add(verdict.slug)
+      return verdict?.deny
+    },
     onSessionStart: (deps: SkillDeps) => run(deps, ledger => ledger),
     onTool: (deps: SkillDeps, call: Record<string, unknown> & { tool: string }, failed: boolean) =>
       run(deps, ledger => learn(deps, ledger, detector.push({ type: 'tool', sessionId: session.id, at: deps.now(), tool: call.tool, files: filesOf(call), failed }))),
@@ -151,6 +160,7 @@ export function createSkillLearning() {
       }),
     onSkillPrompt: (deps: SkillDeps, slug: string) =>
       run(deps, ledger => {
+        session.invoked.add(slug)
         if (ledger[slug]) session.used.push(slug)
         return ledger
       }),

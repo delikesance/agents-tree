@@ -375,6 +375,10 @@ export const register: Register = on => {
       const deny = duplicateReadDeny(agent, e as Record<string, unknown>)
       if (deny) return { deny }
     }
+    if (WRITING_TOOLS.includes(e.tool) && !e.agentId) {
+      const deny = await learning.gate(skillsOf($), e as Record<string, unknown>).catch(() => undefined)
+      if (deny) return { deny }
+    }
     const result = await next(e)
     if (WRITING_TOOLS.includes(e.tool) || (e.tool === 'Bash' && !result.isReadOnly)) forgetReads()
     if (e.tool === 'Workflow' && !e.agentId && !result.isError) recordWorkflowTask(String(result.text ?? ''))
