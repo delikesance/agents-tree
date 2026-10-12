@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { addTask, assertRev, blockTask, failTask, finishTask, nextRunnable, planTasks, startTask, type TaskResult } from './taskstate'
+import { addTask, assertRev, blockTask, failTask, finishTask, nextRunnable, planTasks, startTask, type TaskResult, unblockTask } from './taskstate'
 import { MAX_TASK_ATTEMPTS, type Task, type TaskState } from './taskTypes'
 
 const task = (id: string, deps: string[] = [], overrides: Partial<Task> = {}): Task => ({
@@ -148,6 +148,20 @@ test('blockTask rejects done, already blocked and unknown tasks', () => {
   const blocked = expectState(blockTask(chain, 'a', 'x'))
   expect(errorOf(blockTask(blocked, 'a', 'x'))).toBe('task a is already blocked')
   expect(errorOf(blockTask(chain, 'zz', 'x'))).toBe('unknown task zz')
+})
+
+test('unblockTask returns a blocked task to pending with attempts reset and evidence kept', () => {
+  let state = expectState(startTask(chain, 'a'))
+  state = expectState(failTask(state, 'a', 'boom'))
+  state = expectState(blockTask(state, 'a', 'needs key'))
+  const unblocked = expectState(unblockTask(state, 'a'))
+  expect(unblocked.tasks[0]).toMatchObject({ phase: 'pending', attempts: 0, evidence: 'needs key' })
+  expect(unblocked.rev).toBe(state.rev + 1)
+})
+
+test('unblockTask rejects tasks that are not blocked and unknown tasks', () => {
+  expect(errorOf(unblockTask(chain, 'a'))).toBe('task a is pending, not blocked')
+  expect(errorOf(unblockTask(chain, 'zz'))).toBe('unknown task zz')
 })
 
 test('addTask appends a fresh task with valid deps', () => {

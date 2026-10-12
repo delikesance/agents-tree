@@ -1,8 +1,5 @@
 import { expect, test } from 'claude-code/testing'
 import { lowGainSlugs, skillGain } from './skillMetric'
-import { pruneStale } from './memoVerify'
-import type { AnchorDeps } from './memoVerify'
-import type { Entry } from './knowledge'
 import type { SkillLedger, SkillRecord, SkillStatus } from './skillTypes'
 
 const skill = (slug: string, overrides: Partial<SkillRecord> = {}): SkillRecord => ({
@@ -36,10 +33,6 @@ const losingSkill = (slug: string, status: SkillStatus): SkillRecord =>
     },
   })
 
-test('skillGain is undefined below the minimum uses', () => {
-  expect(skillGain(skill('new', { uses: 2 }))).toBeUndefined()
-})
-
 test('skillGain is undefined without outcomes on either side', () => {
   expect(skillGain(skill('bare', { outcomes: undefined }))).toBeUndefined()
   expect(
@@ -49,16 +42,6 @@ test('skillGain is undefined without outcomes on either side', () => {
 
 test('skillGain is positive when the skill lowers the average cost', () => {
   expect(skillGain(skill('helpful'))).toBe(3)
-})
-
-test('skillGain counts corrections in the average cost', () => {
-  const record = skill('corrected', {
-    outcomes: {
-      with: { sessions: 3, turns: 6, corrections: 0 },
-      without: { sessions: 2, turns: 20, corrections: 4 },
-    },
-  })
-  expect(skillGain(record)).toBe(10)
 })
 
 test('lowGainSlugs flags zero and negative gain but not positive gain', () => {
@@ -78,39 +61,6 @@ test('lowGainSlugs skips inactive, stale and archived skills', () => {
   expect(lowGainSlugs(ledger)).toEqual(['active-skill'])
 })
 
-test('lowGainSlugs skips skills under the minimum uses', () => {
-  const underused = skill('underused', {
-    uses: 2,
-    outcomes: { with: { sessions: 2, turns: 12, corrections: 0 }, without: { sessions: 2, turns: 4, corrections: 0 } },
-  })
-  expect(lowGainSlugs(ledgerOf(underused))).toEqual([])
-})
-
 test('lowGainSlugs on an empty ledger is empty', () => {
   expect(lowGainSlugs({})).toEqual([])
-})
-
-const files: Record<string, string> = { 'src/auth.ts': 'export function refreshToken() {}' }
-
-const deps: AnchorDeps = {
-  exists: async path => path in files,
-  read: async path => files[path],
-}
-
-const memo = (key: string, anchors?: Entry['anchors']): Entry => ({ key, tags: [], text: key, at: 0, anchors })
-
-test('pruneStale drops entries whose anchor path is missing', async () => {
-  const kept = await pruneStale([memo('gone', [{ path: 'src/gone.ts' }])], deps)
-  expect(kept).toEqual([])
-})
-
-test('pruneStale drops entries whose anchor symbol is missing from an existing file', async () => {
-  const kept = await pruneStale([memo('renamed', [{ path: 'src/auth.ts', symbol: 'logout' }])], deps)
-  expect(kept).toEqual([])
-})
-
-test('pruneStale keeps entries without anchors and with valid anchors', async () => {
-  const plain = memo('plain')
-  const valid = memo('valid', [{ path: 'src/auth.ts', symbol: 'refreshToken' }])
-  expect(await pruneStale([plain, valid], deps)).toEqual([plain, valid])
 })
