@@ -1,3 +1,4 @@
+import { filesOf } from './callFiles'
 import type { SkillDeps } from './skillHost'
 import { groupSignal, isInactive, readyToPromote, reject, remove, removeInactive, restore } from './skillLedger'
 import { recordUse, revalidate } from './skillLifecycle'
@@ -13,11 +14,8 @@ import { headCommit, removeSkill } from './skillWriter'
 
 const MAX_PROMOTE_ATTEMPTS = 3
 const SESSION_STORE_KEY = `${SKILLS_STORE_KEY}.session`
-const FILE_ARGS = ['file_path', 'path', 'notebook_path']
 const NO_PROJECT = 'Aucun projet ouvert.'
 const ALREADY_PROMOTING = 'Rédaction déjà en cours pour ce skill.'
-
-const filesOf = (call: Record<string, unknown>) => FILE_ARGS.map(key => call[key]).filter((value): value is string => typeof value === 'string' && value !== '')
 
 const patchRecord = (ledger: SkillLedger, slug: string, patch: Partial<SkillRecord>): SkillLedger =>
   ledger[slug] ? { ...ledger, [slug]: { ...ledger[slug], ...patch } } : ledger
