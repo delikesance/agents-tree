@@ -27,6 +27,8 @@ export type SkillSignal = {
 
 export type SkillStatus = 'candidate' | 'active' | 'stale' | 'archived' | 'rejected'
 
+export type SessionOutcome = { sessions: number; turns: number; corrections: number }
+
 export type SkillRecord = {
   slug: string
   status: SkillStatus
@@ -42,6 +44,7 @@ export type SkillRecord = {
   idleSessions: number
   uses: number
   cleanUses: number
+  outcomes?: { with: SessionOutcome; without: SessionOutcome }
 }
 
 export type SkillLedger = Record<string, SkillRecord>
