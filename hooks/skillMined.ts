@@ -1,5 +1,4 @@
 import type { SkillFs } from './skillTypes'
-import { candidateOf, commandsIn, type DiscoveryCandidate } from './skillDiscovery'
 
 const HISTORY_COMMITS = 300
 const MAX_FILES_PER_COMMIT = 12
@@ -8,7 +7,6 @@ const MIN_COMPANION_SHARE = 0.6
 const MAX_MINED = 5
 const COMMIT_MARK = '@@'
 const NOISE = /(^|\/)(\.claude|\.claudework|node_modules)\/|\.(lock|md|json)$/
-const TEST_SUFFIX = /\.test$/
 
 type Commit = string[]
 
@@ -17,8 +15,6 @@ export const parseHistory = (log: string): Commit[] =>
     .split(COMMIT_MARK)
     .map(block => block.split('\n').slice(1).map(line => line.trim()).filter(line => line && !NOISE.test(line)))
     .filter(files => files.length > 1 && files.length <= MAX_FILES_PER_COMMIT)
-
-const stemOf = (file: string) => (file.split('/').pop() ?? file).replace(/\.\w+$/, '').replace(TEST_SUFFIX, '')
 
 const countBy = (commits: Commit[]) => {
   const counts = new Map<string, number>()
@@ -45,15 +41,6 @@ export const coChangeClusters = (commits: Commit[]) => {
     })
     .slice(0, MAX_MINED)
 }
-
-const verifyStep = (command: string) => `Vérifier avec \`${command}\``
-
-export const minedCandidates = (commits: Commit[], knownCommands: string[]): DiscoveryCandidate[] =>
-  coChangeClusters(commits).map(({ files }) =>
-    candidateOf(`Modifier ${stemOf(files[0] ?? '')}`, [...files.map(file => `Éditer \`${file}\``), ...knownCommands.slice(0, 1).map(verifyStep)]),
-  )
-
-export const testCommandsIn = (texts: string[]) => texts.flatMap(commandsIn).filter(command => command.includes('test'))
 
 export const readHistory = (fs: SkillFs) =>
   fs.run(['git', 'log', `-n${HISTORY_COMMITS}`, '--no-merges', '--name-only', `--pretty=format:${COMMIT_MARK}%s`]).then(parseHistory).catch((): Commit[] => [])
