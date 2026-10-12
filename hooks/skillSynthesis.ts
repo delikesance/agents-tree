@@ -4,6 +4,7 @@ export type SynthesizedSkill = { description: string; steps: string[] }
 
 export const SYNTHESIS_TIMEOUT_SECONDS = 150
 export const SYNTHESIS_MODEL = 'haiku'
+const LIGHT_CLI_FLAGS = ['--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '--setting-sources', '']
 const TIMEOUT_MESSAGE = 'timeout'
 const TIMEOUT_REASON = `délai de ${SYNTHESIS_TIMEOUT_SECONDS} s dépassé`
 const INVALID_REPLY_REASON = 'réponse de synthèse invalide'
@@ -55,7 +56,7 @@ const inSequence = <T>(task: () => Promise<T>): Promise<T> => {
 }
 
 export const askModel = (fs: SkillFs, prompt: string) =>
-  inSequence(() => Promise.race([fs.run(['nice', '-n', '10', 'env', `${SYNTHESIS_ENV}=1`, 'claude', '-p', '--model', SYNTHESIS_MODEL, prompt]), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)]))
+  inSequence(() => Promise.race([fs.run(['nice', '-n', '10', 'env', `${SYNTHESIS_ENV}=1`, 'claude', '-p', '--model', SYNTHESIS_MODEL, ...LIGHT_CLI_FLAGS, prompt]), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)]))
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
