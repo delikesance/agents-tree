@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { buildPrompt, parseSynthesis, synthesizeSkill } from './skillSynthesis'
+import { askModel, buildPrompt, parseSynthesis, synthesizeSkill } from './skillSynthesis'
 import type { SkillFs, SkillRecord } from './skillTypes'
 
 const record: SkillRecord = {
@@ -32,7 +32,7 @@ test('synthesizeSkill: runs the model command and parses output', async () => {
     return '{"description":"Use when x","steps":["a"]}'
   })
   expect(await synthesizeSkill(record, fs)).toEqual({ ok: true, value: { description: 'Use when x', steps: ['a'] } })
-  expect(command.slice(0, 6)).toEqual(['env', 'HIVE_SKILL_SYNTHESIS=1', 'claude', '-p', '--model', 'haiku'])
+  expect(command.slice(0, 9)).toEqual(['nice', '-n', '10', 'env', 'HIVE_SKILL_SYNTHESIS=1', 'claude', '-p', '--model', 'haiku'])
 })
 
 test('synthesizeSkill: reports the CLI error when the command throws', async () => {
@@ -45,4 +45,17 @@ test('synthesizeSkill: reports a timeout', async () => {
 
 test('synthesizeSkill: reports an unparsable reply', async () => {
   expect(await synthesizeSkill(record, fsReturning(async () => 'not json'))).toEqual({ ok: false, reason: 'réponse de synthèse invalide' })
+})
+
+test('askModel: runs model calls one at a time', async () => {
+  let running = 0
+  let peak = 0
+  const fs = fsReturning(async () => {
+    peak = Math.max(peak, ++running)
+    await new Promise(resolve => setTimeout(resolve, 5))
+    running -= 1
+    return ''
+  })
+  await Promise.all([askModel(fs, 'a'), askModel(fs, 'b'), askModel(fs, 'c')])
+  expect(peak).toBe(1)
 })
