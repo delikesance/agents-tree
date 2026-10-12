@@ -46,16 +46,7 @@ export function parseSynthesis(output: string): SynthesizedSkill | undefined {
 
 const timeoutAfter = (seconds: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(TIMEOUT_MESSAGE)), seconds * 1000))
 
-let modelQueue: Promise<unknown> = Promise.resolve()
-
-const inSequence = <T>(task: () => Promise<T>): Promise<T> => {
-  const result = modelQueue.then(task)
-  modelQueue = result.catch(() => undefined)
-  return result
-}
-
-export const askModel = (fs: SkillFs, prompt: string) =>
-  inSequence(() => Promise.race([fs.ask(prompt), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)]))
+export const askModel = (fs: SkillFs, prompt: string) => Promise.race([fs.ask(prompt), timeoutAfter(SYNTHESIS_TIMEOUT_SECONDS)])
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
 

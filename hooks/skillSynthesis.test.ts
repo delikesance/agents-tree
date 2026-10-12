@@ -47,7 +47,7 @@ test('synthesizeSkill: reports an unparsable reply', async () => {
   expect(await synthesizeSkill(record, fsReturning(async () => 'not json'))).toEqual({ ok: false, reason: 'réponse de synthèse invalide' })
 })
 
-test('askModel: runs model calls one at a time', async () => {
+test('askModel: runs model calls in parallel', async () => {
   let running = 0
   let peak = 0
   const fs = fsReturning(async () => {
@@ -57,5 +57,5 @@ test('askModel: runs model calls one at a time', async () => {
     return ''
   })
   await Promise.all([askModel(fs, 'a'), askModel(fs, 'b'), askModel(fs, 'c')])
-  expect(peak).toBe(1)
+  expect(peak).toBe(3)
 })
