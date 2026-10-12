@@ -4,6 +4,7 @@ import type { Outcome, SkillRecord } from './skillTypes'
 import { writeSkill } from './skillWriter'
 
 const MAX_CITED_PATHS = 12
+const NO_PROJECT_FILE_REASON = 'aucun fichier du projet cité'
 
 const relativeTo = (cwd: string) => (file: string) => {
   if (file.startsWith(`${cwd}/`)) return file.slice(cwd.length + 1)
@@ -18,6 +19,7 @@ export type PromotionPatch = Pick<SkillRecord, 'status' | 'citedPaths' | 'headCo
 
 export async function promotionPatch(deps: SkillDeps, cwd: string, record: SkillRecord): Promise<Outcome<PromotionPatch>> {
   const candidate = { ...record, citedPaths: citedPathsOf(record, cwd) }
+  if (!candidate.citedPaths.length) return { ok: false, reason: NO_PROJECT_FILE_REASON }
   const synthesized = await synthesizeSkill(candidate, deps.fs)
   if (!synthesized.ok) return synthesized
   const written = await writeSkill(deps.fs, cwd, candidate, synthesized.value)

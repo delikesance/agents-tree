@@ -11,18 +11,8 @@ const turnEnd = (sessionId = 's1'): SkillEvent => ({ type: 'turn-end', sessionId
 const feed = (events: SkillEvent[], detector = createSignalDetector()) => events.flatMap((event) => detector.push(event))
 const kinds = (events: SkillEvent[]) => feed(events).map((signal) => signal.kind)
 
-test('sequence: varied tools before an edit emit once at turn end', () => {
-  const signals = feed([tool('Grep', ['src/a.ts']), tool('Read', ['src/a.ts']), tool('Edit', ['src/a.ts']), turnEnd()])
-  expect(signals).toHaveLength(1)
-  expect(signals[0].kind).toBe('sequence')
-  expect(signals[0].tools).toEqual(['Grep', 'Read', 'Edit'])
-  expect(signals[0].files).toEqual(['src/a.ts'])
-})
-
-test('sequence: trivial or edit-less turns emit nothing', () => {
-  expect(kinds([tool('Read'), tool('Edit'), turnEnd()])).toEqual([])
-  expect(kinds([tool('Read'), tool('Grep'), tool('Glob'), turnEnd()])).toEqual([])
-  expect(kinds([tool('Read'), tool('Read'), tool('Read'), tool('Edit', [], true), turnEnd()])).toEqual([])
+test('a plain read-edit chain emits nothing, even at turn end', () => {
+  expect(kinds([tool('Grep', ['src/a.ts']), tool('Read', ['src/a.ts']), tool('Edit', ['src/a.ts']), turnEnd()])).toEqual([])
 })
 
 test('correction: cue after a turn end carries truncated text', () => {
@@ -74,7 +64,7 @@ test('state is bounded: turn events are capped and old sessions are evicted', ()
   const detector = createSignalDetector()
   feed(Array.from({ length: 500 }, () => tool('Read', ['a.ts'])), detector)
   feed([tool('Edit', ['a.ts'])], detector)
-  expect(detector.push(turnEnd())[0].tools).toEqual(['Read', 'Edit'])
+  expect(detector.push(turnEnd())).toEqual([])
 
   feed([turnEnd('old')], detector)
   for (let index = 0; index < 60; index += 1) detector.push(tool('Read', [], false, `other${index}`))

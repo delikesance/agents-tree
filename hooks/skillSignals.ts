@@ -6,8 +6,6 @@ const MAX_SESSIONS = 50
 const MAX_TURN_EVENTS = 200
 const MAX_SIGNAL_FILES = 12
 const NOTE_CHARS = 160
-const MIN_SEQUENCE_CALLS = 3
-const MIN_SEQUENCE_TOOLS = 2
 const MIN_RETRY_FAILURES = 2
 const MIN_EXPLORATION_READS = 8
 const READ_TOOLS = new Set(['Read', 'Grep', 'Glob'])
@@ -27,8 +25,6 @@ const freshState = (): SessionState => ({ turn: [], failures: 0, explored: false
 
 const unique = <T>(items: T[]) => [...new Set(items)]
 
-const directoryOf = (file: string) => file.slice(0, Math.max(file.lastIndexOf('/'), 0))
-
 const signal = (kind: SkillSignalKind, events: ToolEvent[], at: number, note: string, sessionId: string): SkillSignal => ({
   kind,
   sessionId,
@@ -39,15 +35,6 @@ const signal = (kind: SkillSignalKind, events: ToolEvent[], at: number, note: st
 })
 
 const isSuccessfulEdit = (event: ToolEvent) => EDIT_TOOLS.has(event.tool) && !event.failed
-
-function sequenceSignal(state: SessionState, sessionId: string, at: number): SkillSignal[] {
-  const firstEdit = state.turn.findIndex(isSuccessfulEdit)
-  const steps = firstEdit < 0 ? [] : state.turn.slice(0, firstEdit + 1)
-  const tools = unique(steps.map((step) => step.tool))
-  if (steps.length < MIN_SEQUENCE_CALLS || tools.length < MIN_SEQUENCE_TOOLS) return []
-  const pattern = unique(steps.map((step) => `${step.tool}:${directoryOf(step.files[0] ?? '')}`))
-  return [signal('sequence', steps, at, pattern.join(' > ').slice(0, NOTE_CHARS), sessionId)]
-}
 
 function retrySignal(state: SessionState, event: ToolEvent): SkillSignal[] {
   if (event.failed) {
@@ -85,12 +72,11 @@ function onTool(state: SessionState, event: ToolEvent): SkillSignal[] {
   return [...retrySignal(state, event), ...explorationSignal(state, event)]
 }
 
-function onTurnEnd(state: SessionState, event: SkillEvent): SkillSignal[] {
-  const signals = sequenceSignal(state, event.sessionId, event.at)
+function onTurnEnd(state: SessionState): SkillSignal[] {
   state.turn = []
   state.explored = false
   state.turnEnded = true
-  return signals
+  return []
 }
 
 export function createSignalDetector() {
@@ -109,7 +95,7 @@ export function createSignalDetector() {
     push(event: SkillEvent): SkillSignal[] {
       const state = stateFor(event.sessionId)
       if (event.type === 'tool') return onTool(state, event)
-      if (event.type === 'turn-end') return onTurnEnd(state, event)
+      if (event.type === 'turn-end') return onTurnEnd(state)
       if (event.type === 'prompt') return correctionSignal(state, event)
       return []
     },

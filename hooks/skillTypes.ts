@@ -8,7 +8,7 @@ export const MAX_ACTIVE_SKILLS = 20
 export const MAX_SKILL_BODY_LINES = 40
 export const MAX_DESCRIPTION_CHARS = 200
 
-export type SkillSignalKind = 'sequence' | 'correction' | 'retry' | 'exploration' | 'discovery'
+export type SkillSignalKind = 'correction' | 'retry' | 'exploration' | 'discovery'
 
 export type SkillEvent =
   | { type: 'tool'; sessionId: string; at: number; tool: string; files: string[]; failed: boolean }

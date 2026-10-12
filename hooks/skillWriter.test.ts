@@ -14,7 +14,7 @@ const record = (overrides: Partial<SkillRecord> = {}): SkillRecord => ({
   slug: 'fix-tests', status: 'candidate', tags: [], sessions: [], signals: [], citedPaths: ['a.ts', 'gone.ts'],
   headCommit: '', createdAt: 0, idleSessions: 0, uses: 0, cleanUses: 0, ...overrides,
 })
-const synthesized = { description: 'Use when tests fail', steps: ['Run tests'] }
+const synthesized = { description: 'Use when tests fail', steps: ['Run tests in a.ts'] }
 
 test('writeSkill: writes SKILL.md and keeps only existing cited paths', async () => {
   const fs = memoryFs({ '/p/a.ts': 'x' })
@@ -25,7 +25,7 @@ test('writeSkill: writes SKILL.md and keeps only existing cited paths', async ()
 
 test('writeSkill: refuses invalid content', async () => {
   const fs = memoryFs()
-  const result = await writeSkill(fs, '/p', record(), { description: 'Fix tests', steps: ['a'] })
+  const result = await writeSkill(fs, '/p', record(), { description: 'Fix tests', steps: ['a.ts'] })
   expect(result.ok).toBe(false)
   expect(Object.keys(fs.files)).toEqual([])
 })
@@ -52,4 +52,10 @@ test('a discovered skill lists only the files its steps mention, yet keeps track
   const text = Object.values(written)[0] ?? ''
   expect(text).toContain('- a.ts')
   expect(text).not.toContain('- b.ts')
+})
+
+test('writeSkill: refuses steps that cite no project file', async () => {
+  const fs = memoryFs({ '/p/a.ts': 'x' })
+  const result = await writeSkill(fs, '/p', record(), { description: 'Use when tests fail', steps: ['Run tests'] })
+  expect(result).toEqual({ ok: false, errors: ['steps cite no project file'] })
 })
