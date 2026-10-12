@@ -21,7 +21,7 @@ export async function closeSession(deps: SkillDeps, ledger: SkillLedger, session
 }
 
 const changedSince = async (deps: SkillDeps, head: string) =>
-  (await deps.fs.run(['git', 'diff', '--name-only', `${head}..HEAD`]).catch(() => '')).split('\n').filter(Boolean)
+  (await deps.fs.run(['git', 'diff', '--name-only', '--no-renames', '--diff-filter=D', `${head}..HEAD`]).catch(() => '')).split('\n').filter(Boolean)
 
 export async function flagStale(deps: SkillDeps, ledger: SkillLedger): Promise<SkillLedger> {
   const heads = new Set(Object.values(ledger).filter(record => record.status === 'active' && record.headCommit).map(record => record.headCommit))
