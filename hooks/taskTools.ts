@@ -1,5 +1,5 @@
 import { MAX_TASK_ATTEMPTS, activeTask, type Task, type TaskState } from './taskTypes'
-import { addTask, blockTask, failTask, finishTask, planTasks, startTask, type TaskResult } from './taskstate'
+import { addTask, blockTask, failTask, finishTask, planTasks, startTask, type TaskResult, unblockTask } from './taskstate'
 
 export type TaskToolDeps = {
   load(): Promise<TaskState | undefined>
@@ -65,6 +65,11 @@ export const TASK_TOOLS = [
     },
   },
   {
+    name: 'task_unblock',
+    description: 'Return a blocked task to pending with its attempts reset, so it can be started again.',
+    inputSchema: TASK_ID_ONLY,
+  },
+  {
     name: 'task_add',
     description: 'Add a pending task to the current plan.',
     inputSchema: TASK_SCHEMA,
@@ -121,6 +126,10 @@ async function runWithState(
     case 'task_block': {
       const id = String(input.id)
       return persist(deps, blockTask(state, id, String(input.reason)), `blocked ${id}`)
+    }
+    case 'task_unblock': {
+      const id = String(input.id)
+      return persist(deps, unblockTask(state, id), `unblocked ${id}`)
     }
     case 'task_add': {
       const task = toTask(input as TaskInput)
