@@ -25,6 +25,10 @@ test('validateSkill: missing frontmatter and long body', () => {
   expect(validateSkill(renderSkill({ ...draft, steps }))).toContain('body exceeds 40 lines')
 })
 
+test('validateSkill: a .claude/ path is not a forbidden mention', () => {
+  expect(validateSkill(renderSkill({ ...draft, steps: ['Edit `.claude/project-map.md`'] }))).not.toContain('contains a forbidden mention')
+})
+
 test('validateSkill: forbidden content', () => {
   expect(validateSkill(renderSkill({ ...draft, steps: ['Ask Claude'] }))).toContain('contains a forbidden mention')
   expect(validateSkill(renderSkill({ ...draft, steps: ['Use the AI'] }))).toContain('contains a forbidden mention')

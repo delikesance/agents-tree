@@ -6,6 +6,8 @@ export type WriteResult = { ok: true; citedPaths: string[]; headCommit: string }
 
 const NO_CITED_STEP = 'steps cite no project file'
 
+const relativeSteps = (steps: string[], cwd: string) => steps.map(step => step.replaceAll(`${cwd}/`, ''))
+
 const mentionedIn = (steps: string[], paths: string[]) => paths.filter(path => steps.some(step => step.includes(path)))
 
 const isSafeSlug = (slug: string) => /^[a-z0-9][a-z0-9-]*$/.test(slug)
@@ -19,7 +21,8 @@ async function existingPaths(fs: SkillFs, cwd: string, paths: string[]): Promise
 
 export const headCommit = async (fs: SkillFs) => (await fs.run(['git', 'rev-parse', 'HEAD']).catch(() => '')).trim()
 
-export async function writeSkill(fs: SkillFs, cwd: string, record: SkillRecord, synthesized: SynthesizedSkill): Promise<WriteResult> {
+export async function writeSkill(fs: SkillFs, cwd: string, record: SkillRecord, draft: SynthesizedSkill): Promise<WriteResult> {
+  const synthesized = { ...draft, steps: relativeSteps(draft.steps, cwd) }
   if (!isSafeSlug(record.slug)) return { ok: false, errors: ['invalid slug'] }
   const citedPaths = await existingPaths(fs, cwd, record.citedPaths)
   const listed = mentionedIn(synthesized.steps, citedPaths)
