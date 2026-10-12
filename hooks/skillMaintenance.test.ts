@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { closeSession } from './skillMaintenance'
+import { closeSession, flagStale } from './skillMaintenance'
 import type { SkillDeps } from './skillHost'
 import type { SkillLedger, SkillRecord } from './skillTypes'
 
@@ -15,4 +15,15 @@ test('closeSession: archives active skills that cite no file and removes their f
   expect(closed.vague.status).toBe('archived')
   expect(closed.specific.status).toBe('active')
   expect(removed).toEqual(['/p/.claude/skills/vague/SKILL.md'])
+})
+
+test('flagStale: only deleted cited files flag a skill, plain edits do not', async () => {
+  const commands: string[][] = []
+  const deleted = ['src/gone.ts']
+  const deps = { cwd: '/p', fs: { run: async (command: string[]) => { commands.push(command); return command.includes('--diff-filter=D') ? deleted.join('\n') : 'src/a.ts' } } } as unknown as SkillDeps
+  const ledger: SkillLedger = { kept: { ...record('kept', ['src/a.ts']), headCommit: 'h' }, gone: { ...record('gone', ['src/gone.ts']), headCommit: 'h' } }
+  const flagged = await flagStale(deps, ledger)
+  expect(flagged.kept.status).toBe('active')
+  expect(flagged.gone.status).toBe('stale')
+  expect(commands[0]).toContain('--diff-filter=D')
 })
