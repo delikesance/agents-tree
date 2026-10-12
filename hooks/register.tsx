@@ -5,6 +5,8 @@ import type { AgentUsage, GoalProgress } from '../types'
 
 import { PROGRESS_SECTION, PROGRESS_TOOL } from './progress'
 import { TASK_TOOLS } from './taskTools'
+import { hostTaskExec, hostTaskIo } from './taskIo'
+import type { TaskRuntime } from './taskIo'
 import { serveTaskCall, taskEditDeny, taskSections, taskStopRefusal } from './taskServe'
 import type { Todo } from './activity'
 import { TASK_STATUS_DONE, countTask, describeCall, hasUnfinished, hasUnfinishedTodos, stepsToTodos, todoProgress, toTodos } from './activity'
@@ -206,6 +208,16 @@ const serveRemember = async ($: StateHost, e: ServedCall) => {
   return { result: `Enregistré: ${parsed.entry.key}` }
 }
 
+const taskRuntime = ($: CoreEngineInterface): TaskRuntime => {
+  const run = (argv: string[], cwd?: string) => $.process.run(argv, { cwd })
+  const fs = {
+    exists: (path: string) => $.fs.exists(path),
+    read: (path: string) => $.fs.read(path),
+    write: (path: string, text: string) => $.fs.write(path, text),
+  }
+  return { io: hostTaskIo(fs, run), exec: hostTaskExec(run), setStore: (key, value) => $.store.set(key, value) }
+}
+
 const serveRecall = async ($: StateHost, e: ServedCall) => {
   const { query = '', key } = e as { query?: string; key?: string }
   const entries = await loadKnowledge($)
@@ -370,7 +382,7 @@ export const register: Register = on => {
     if (e.tool === `${TOOL_PREFIX}remember`) return serveRemember($, e as ServedCall)
     if (e.tool === `${TOOL_PREFIX}recall`) return serveRecall($, e as ServedCall)
     if (e.tool === `${TOOL_PREFIX}progress`) return serveProgress($, e as ServedCall)
-    if (e.tool.startsWith(`${TOOL_PREFIX}task_`) && projectDir.cwd) return serveTaskCall($, projectDir.cwd, e as ServedCall, TOOL_PREFIX)
+    if (e.tool.startsWith(`${TOOL_PREFIX}task_`) && projectDir.cwd) return serveTaskCall(taskRuntime($), projectDir.cwd, e as ServedCall, TOOL_PREFIX)
     const key = `${agent}:${e.tool}:${activity}`
     startCall()
     if (stopped.has(key)) return { deny: BREAKER_DENY }
@@ -380,7 +392,7 @@ export const register: Register = on => {
       if (deny) return { deny }
     }
     if (WRITING_TOOLS.includes(e.tool) && !e.agentId) {
-      const taskDeny = await taskEditDeny(projectDir.cwd, e as Record<string, unknown>)
+      const taskDeny = await taskEditDeny(taskRuntime($), projectDir.cwd, e as Record<string, unknown>)
       if (taskDeny) return taskDeny
       const deny = await learning.gate(skillsOf($), e as Record<string, unknown>).catch(() => undefined)
       if (deny) return { deny }
@@ -415,10 +427,10 @@ export const register: Register = on => {
 
   on('prompt.compose', async ($, e, next) => {
     const { sections } = await next(e)
-    return { sections: [...sections, KNOWLEDGE_SECTION, PROGRESS_SECTION, ...(await taskSections(projectDir.cwd))] }
+    return { sections: [...sections, KNOWLEDGE_SECTION, PROGRESS_SECTION, ...(await taskSections(taskRuntime($), projectDir.cwd))] }
   })
 
-  on('classic.Stop', async ($, e, next) => (e.agent_id ? next(e) : (await taskStopRefusal(projectDir.cwd)) ?? next(e)))
+  on('classic.Stop', async ($, e, next) => (e.agent_id ? next(e) : (await taskStopRefusal(taskRuntime($), projectDir.cwd)) ?? next(e)))
 
   on('session.compact', async ($, e, next) => {
     forgetReads()
