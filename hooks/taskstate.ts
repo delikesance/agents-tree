@@ -102,6 +102,13 @@ export function blockTask(state: TaskState, id: string, reason: string): TaskRes
   return updateTask(state, id, { phase: 'blocked', evidence: reason })
 }
 
+export function unblockTask(state: TaskState, id: string): TaskResult {
+  const task = findTask(state, id)
+  if (!task) return unknownTask(id)
+  if (task.phase !== 'blocked') return fail(`task ${id} is ${task.phase}, not blocked`)
+  return updateTask(state, id, { phase: 'pending', attempts: 0 })
+}
+
 export function addTask(state: TaskState, task: Task): TaskResult {
   if (findTask(state, task.id)) return fail(`duplicate task id: ${task.id}`)
   const error = freshError(task) ?? graphError([...state.tasks, task])

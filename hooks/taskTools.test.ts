@@ -28,8 +28,15 @@ async function planned(verify?: { code: number; output: string }) {
   return memory
 }
 
-test('exposes the five task tools', () => {
-  expect(TASK_TOOLS.map(tool => tool.name)).toEqual(['task_plan', 'task_start', 'task_done', 'task_block', 'task_add'])
+test('exposes the six task tools', () => {
+  expect(TASK_TOOLS.map(tool => tool.name)).toEqual([
+    'task_plan',
+    'task_start',
+    'task_done',
+    'task_block',
+    'task_unblock',
+    'task_add',
+  ])
 })
 
 test('asks for a plan before any other task tool', async () => {
@@ -98,6 +105,14 @@ test('block marks a task blocked with its reason', async () => {
   const { deps, current } = await planned()
   expect(await handleTaskTool('task_block', { id: 't1', reason: 'needs key' }, deps)).toBe('blocked t1')
   expect(current()?.tasks[0]).toMatchObject({ phase: 'blocked', evidence: 'needs key' })
+})
+
+test('unblock returns a blocked task to pending and rejects other phases', async () => {
+  const { deps, current } = await planned()
+  expect(await handleTaskTool('task_unblock', { id: 't1' }, deps)).toBe('task t1 is pending, not blocked')
+  await handleTaskTool('task_block', { id: 't1', reason: 'needs key' }, deps)
+  expect(await handleTaskTool('task_unblock', { id: 't1' }, deps)).toBe('unblocked t1')
+  expect(current()?.tasks[0]).toMatchObject({ phase: 'pending', attempts: 0, evidence: 'needs key' })
 })
 
 test('add appends a pending task to the plan', async () => {
