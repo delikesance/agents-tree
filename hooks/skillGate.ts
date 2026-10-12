@@ -2,9 +2,9 @@ import type { SkillLedger } from './skillTypes'
 
 export type GateVerdict = { deny: string; slug: string }
 
-const relativeTo = (cwd: string, file: string) => (file.startsWith(`${cwd}/`) ? file.slice(cwd.length + 1) : undefined)
+export const relativeTo = (cwd: string, file: string) => (file.startsWith(`${cwd}/`) ? file.slice(cwd.length + 1) : undefined)
 
-const covers = (cited: string, file: string) => file === cited || file.startsWith(`${cited.replace(/\/+$/, '')}/`)
+export const covers =(cited: string, file: string) => file === cited || file.startsWith(`${cited.replace(/\/+$/, '')}/`)
 
 export const skillGate = (ledger: SkillLedger, cwd: string, files: string[], invoked: Set<string>, denied: Set<string>): GateVerdict | undefined => {
   const touched = files.map(file => relativeTo(cwd, file)).filter((file): file is string => !!file)
