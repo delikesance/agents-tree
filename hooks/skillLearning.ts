@@ -5,7 +5,8 @@ import { recordUse, revalidate } from './skillLifecycle'
 import { closeSession, flagStale, isLive } from './skillMaintenance'
 import { promotionPatch, type PromotionPatch } from './skillPromotion'
 import { summarizeCandidate } from './skillSummary'
-import { adoptVerdicts, discoverVerdicts, verdictLines } from './skillDiscover'
+import { discoverVerdicts, newRecordsOf, verdictLines } from './skillDiscover'
+import type { Verdict } from './skillDiscovery'
 import { skillGate } from './skillGate'
 import { skillNudge } from './skillNudge'
 import { createSignalDetector } from './skillSignals'
@@ -80,6 +81,19 @@ export function createSkillLearning() {
     const summary = await summarizeCandidate(record, deps.fs)
     summarizing.delete(record.slug)
     if (summary) await mutate(deps, ledger => patchRecord(ledger, record.slug, { summary }))
+  }
+
+  const adopt = async (deps: SkillDeps, cwd: string, verdicts: Verdict[], notify: (message?: string) => void) => {
+    const records = newRecordsOf(await load(deps), verdicts, deps.now())
+    records.forEach(record => promoting.add(record.slug))
+    await mutate(deps, ledger => records.reduce((current, record) => ({ ...current, [record.slug]: record }), ledger))
+    notify()
+    let written = 0
+    for (const record of records) {
+      written += (await promote(deps, cwd, record)).ok ? 1 : 0
+      notify()
+    }
+    notify(`${written}/${records.length} skills rédigés${written < records.length ? ' — échecs détaillés dans le panneau' : ''}`)
   }
 
   const startSummaries = (deps: SkillDeps, ledger: SkillLedger) => {
@@ -162,12 +176,12 @@ export function createSkillLearning() {
         if (ledger[slug]) session.used.push(slug)
         return ledger
       }),
-    discover: async (deps: SkillDeps, apply: boolean) => {
+    discover: async (deps: SkillDeps, apply: boolean, notify: (message?: string) => void = () => undefined) => {
       const { cwd } = deps
       if (!cwd) return NO_PROJECT
       const ledger = await load(deps)
       const verdicts = await discoverVerdicts(deps, cwd, ledger, Object.values(ledger).flatMap(record => record.signals))
-      if (apply) void mutate(deps, ledger => adoptVerdicts(deps, cwd, ledger, verdicts))
+      if (apply) void adopt(deps, cwd, verdicts, notify)
       if (!verdicts.length) return 'Aucun candidat dans README.md ni dans l\'historique git.'
       return apply ? `${verdictLines(verdicts)}\nRédaction des skills ✔ en arrière-plan.` : verdictLines(verdicts)
     },

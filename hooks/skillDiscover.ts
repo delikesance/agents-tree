@@ -3,7 +3,6 @@ import { judge, markdownCandidates, type DiscoveryCandidate, type Verdict } from
 import { buildDigest } from './skillDigest'
 import { proposeCandidates } from './skillPropose'
 import { isLive } from './skillMaintenance'
-import { promotionPatch } from './skillPromotion'
 import { headCommit } from './skillWriter'
 import { MAX_ACTIVE_SKILLS, SKILLS_STORE_KEY, type SkillLedger, type SkillRecord, type SkillSignal } from './skillTypes'
 
@@ -57,16 +56,12 @@ export const recordOf = (candidate: DiscoveryCandidate, at: number): SkillRecord
   cleanUses: 0,
 })
 
-export async function adoptVerdicts(deps: SkillDeps, cwd: string, ledger: SkillLedger, verdicts: Verdict[]): Promise<SkillLedger> {
+export const newRecordsOf = (ledger: SkillLedger, verdicts: Verdict[], at: number): SkillRecord[] => {
   const room = MAX_ACTIVE_SKILLS - Object.values(ledger).filter(isLive).length
-  const accepted = verdicts.filter(verdict => !verdict.failed.length).slice(0, Math.max(room, 0))
-  let adopted = ledger
-  for (const { candidate } of accepted) {
-    const record = recordOf(candidate, deps.now())
-    const outcome = await promotionPatch(deps, cwd, record).catch(() => undefined)
-    if (outcome?.ok) adopted = { ...adopted, [record.slug]: { ...record, ...outcome.value } }
-  }
-  return adopted
+  return verdicts
+    .filter(verdict => !verdict.failed.length && !ledger[verdict.candidate.slug])
+    .slice(0, Math.max(room, 0))
+    .map(({ candidate }) => recordOf(candidate, at))
 }
 
 const reasonOf = ({ candidate, failed, covered }: Verdict) =>
