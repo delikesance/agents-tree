@@ -17,7 +17,6 @@ test('proposeCandidates: maps model skills to grounded candidates', async () => 
       title: skill.title,
       steps: skill.steps,
       files: ['hooks/skillMined.ts', 'hooks/skillMined.test.ts'],
-      commands: ['bun test hooks/skill'],
     },
   ])
 })
@@ -41,10 +40,4 @@ test('proposeCandidates: returns [] for malformed JSON', async () => {
 
 test('proposeCandidates: returns [] when the model call rejects', async () => {
   expect(await proposeCandidates(fsReturning(async () => { throw new Error('boom') }), 'digest', [])).toEqual([])
-})
-
-test('a proposal without a command gets the known test command as its last step', async () => {
-  const output = JSON.stringify({ skills: [{ title: 'Edit a', steps: ['Read `hooks/a.ts`', 'Edit `hooks/a.ts`', 'Check `hooks/b.ts`'] }] })
-  const [candidate] = await proposeCandidates({ run: async () => output } as never, 'digest', [], 'bun test hooks/')
-  expect(candidate?.commands).toEqual(['bun test hooks/'])
 })
