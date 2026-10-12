@@ -5,8 +5,10 @@ import { removeSkill } from './skillWriter'
 
 export const isLive = (record: SkillRecord) => record.status === 'active' || record.status === 'stale'
 
+const isUnenforceable = (record: SkillRecord) => record.citedPaths.length === 0
+
 const archiveWeak = (ledger: SkillLedger): SkillLedger =>
-  Object.fromEntries(Object.entries(ledger).map(([slug, record]) => [slug, record.status === 'active' && underperforming(record) ? { ...record, status: 'archived' as const } : record]))
+  Object.fromEntries(Object.entries(ledger).map(([slug, record]) => [slug, record.status === 'active' && (underperforming(record) || isUnenforceable(record)) ? { ...record, status: 'archived' as const } : record]))
 
 const newlyArchived = (before: SkillLedger, after: SkillLedger) =>
   Object.keys(after).filter(slug => after[slug]?.status === 'archived' && !!before[slug] && isLive(before[slug]))
