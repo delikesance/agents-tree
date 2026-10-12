@@ -11,7 +11,8 @@ export const KNOWLEDGE_SECTION = {
   text: 'Knowledge cache: mcp__hive__recall searches saved findings by keywords. After finding where something lives or how a problem was solved, call mcp__hive__remember with a short factual entry (paths, symbols, conclusion).',
   scope: 'session',
 } as const
-export type Entry = { key: string; tags: string[]; text: string; at: number; learned?: true }
+export type Anchor = { path: string; symbol?: string }
+export type Entry = { key: string; tags: string[]; text: string; at: number; learned?: true; anchors?: Anchor[] }
 
 export const REMEMBER_TOOL = {
   name: 'remember',
@@ -23,6 +24,15 @@ export const REMEMBER_TOOL = {
       key: { type: 'string', description: 'Short unique slug, e.g. "auth-token-refresh-flow"' },
       text: { type: 'string', description: 'The finding: paths, symbols, conclusion' },
       tags: { type: 'array', items: { type: 'string' }, description: 'Search keywords' },
+      anchors: {
+        type: 'array',
+        description: 'Files and symbols the finding depends on; the entry is dropped once one of them disappears',
+        items: {
+          type: 'object',
+          properties: { path: { type: 'string' }, symbol: { type: 'string' } },
+          required: ['path'],
+        },
+      },
     },
     required: ['key', 'text'],
   },
